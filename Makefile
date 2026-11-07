@@ -1,4 +1,4 @@
-VERSION  := 52
+VERSION  := 1
 UUID     := brightness-slider@shantanub08.github.io
 DOMAIN   := brightness-slider
 

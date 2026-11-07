@@ -7,15 +7,15 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag to release (e.g. v50). Use to retrigger a failed release after fixing the issue.'
+        description: 'Tag to release (e.g. v1). Use to retrigger a failed release after fixing the issue.'
         required: true
 
 jobs:
   # ── Build ────────────────────────────────────────────────────────────────────
   # Triggered by a tag push (v*) or manually via workflow_dispatch.
   # Checks out the tagged commit, builds the zip from source, extracts release
-  # notes from the README changelog, creates the GitHub release, and attaches
-  # the zip. Fails early if no changelog entry exists for the version.
+  # notes from CHANGELOG.md, creates the GitHub release, and attaches the zip.
+  # Fails early if no changelog entry exists for the version.
   build:
     runs-on: ubuntu-latest
     permissions:
@@ -49,13 +49,13 @@ jobs:
       - name: Build extension zip
         run: make zip VERSION=${{ steps.ver.outputs.version }}
 
-      - name: Extract release notes from README
+      - name: Extract release notes from CHANGELOG
         run: |
           VERSION="${{ steps.ver.outputs.version }}"
           awk "/^### Version ${VERSION}$/{found=1; next} found && /^### /{exit} found{print}" \
-            README.md > /tmp/release-notes.md
+            CHANGELOG.md > /tmp/release-notes.md
           if [ ! -s /tmp/release-notes.md ]; then
-            echo "ERROR: No '### Version ${VERSION}' section found in README.md."
+            echo "ERROR: No '### Version ${VERSION}' section found in CHANGELOG.md."
             echo "Add a changelog entry under '### Version ${VERSION}' before tagging."
             exit 1
           fi
