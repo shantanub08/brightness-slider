@@ -1,6 +1,6 @@
 # Soft Brightness Plus Gnome Shell Extension
 
-![Brightness slider in Gnome Shell's system menu](docs/soft-brightness-plus.png)
+![Brightness slider in Gnome Shell's system menu](docs/brightness-slider.png)
 
 ## Overview
 

@@ -1,6 +1,7 @@
-// soft-brightness-plus - Control the display's brightness via an alpha channel.
+// brightness-slider - Control the display's brightness via an alpha channel.
 // Copyright (C) 2019-2022 Philippe Troin (F-i-f on Github)
 // Copyright (C) 2023 Joel Kitching (jkitching on Github)
+// Copyright (C) 2026 Shantanu Baviskar (shantanub08 on Github)
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -26,7 +27,7 @@ import {
 
 import * as Utils from './utils.js';
 
-export default class SoftBrightnessPreferences extends ExtensionPreferences {
+export default class BrightnessSliderPreferences extends ExtensionPreferences {
     fillPreferencesWindow(window) {
         window.add(new PreferencesPage(this.getSettings(), this.metadata));
     }
@@ -187,9 +188,19 @@ const PreferencesPage = GObject.registerClass(class PreferencesPage extends Adw.
                 halign: Gtk.Align.CENTER,
                 margin_top: this.margin_bottom,
             });
+            const copyright3 = new Gtk.Label({
+                use_markup: true,
+                label: '<span size="small">' +
+                    _('Copyright © 2026 Shantanu Baviskar (<a href="https://github.com/shantanub08">shantanub08</a> on GitHub)') +
+                    '</span>',
+                hexpand: true,
+                halign: Gtk.Align.CENTER,
+                margin_top: this.margin_bottom,
+            });
 
             group.add(copyright1);
             group.add(copyright2);
+            group.add(copyright3);
 
             this.add(group);
         }

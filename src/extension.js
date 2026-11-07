@@ -1,6 +1,7 @@
-// soft-brightness-plus - Control the display's brightness via an alpha channel.
+// brightness-slider - Control the display's brightness via an alpha channel.
 // Copyright (C) 2019-2022 Philippe Troin (F-i-f on Github)
 // Copyright (C) 2022-2024 Joel Kitching (jkitching on Github)
+// Copyright (C) 2026 Shantanu Baviskar (shantanub08 on Github)
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -248,7 +249,7 @@ export function getDefaultSeat() {
     return backend.get_default_seat();
 }
 
-export default class SoftBrightnessExtension extends Extension {
+export default class BrightnessSliderExtension extends Extension {
     constructor(...args) {
         super(...args);
 
@@ -266,7 +267,7 @@ export default class SoftBrightnessExtension extends Extension {
     // Base functionality: set-up and tear down logger, settings and debug setting monitoring
     enable() {
         this._settings = this.getSettings();
-        this._logger = new Logger.Logger('soft-brightness-plus', this.metadata, Config.PACKAGE_VERSION);
+        this._logger = new Logger.Logger('brightness-slider', this.metadata, Config.PACKAGE_VERSION);
         this._logger.set_debug(this._settings.get_boolean('debug'));
         this._logger.log_debug('enable(), session mode = ' + Main.sessionMode.currentMode);
         this._logger.logVersion();
@@ -1150,7 +1151,7 @@ export class OverlayManager {
     }
 
     enable() {
-        this._actorGroup = new St.Widget({ name: 'soft-brightness-plus-overlays' });
+        this._actorGroup = new St.Widget({ name: 'brightness-slider-overlays' });
         this.resetSize();
         Shell.util_set_hidden_from_pick(this._actorGroup, true);
         // Host the cursor-clone group inside uiGroup, like the magnifier
@@ -1293,7 +1294,7 @@ export class OverlayManager {
         if (monitorRects === null)
             return;
         const effect = new GammaCurveEffect(this._currentBrightness, monitorRects);
-        actor.add_effect_with_name('soft-brightness-plus-shader', effect);
+        actor.add_effect_with_name('brightness-slider-shader', effect);
         const destroyId = actor.connect('destroy', () => this._removeActorFromTargets(actor));
         this._shaderTargets.push({ actor, effect, destroyId });
         this._logger.log_debug('_applyShaderToActor: ' + (actor.name || String(actor)));
@@ -1347,7 +1348,7 @@ export class OverlayManager {
                 return { actor, effect, destroyId: existingDestroyMap.get(actor) };
             }
             const effect = new GammaCurveEffect(brightness, monitorRects);
-            actor.add_effect_with_name('soft-brightness-plus-shader', effect);
+            actor.add_effect_with_name('brightness-slider-shader', effect);
             const destroyId = actor.connect('destroy', () => this._removeActorFromTargets(actor));
             return { actor, effect, destroyId };
         });

@@ -1,11 +1,11 @@
-# Czech translations for soft-brightness-plus.
-# Copyright (C) 2019-2024 THE soft-brightness-plus AUTHORS
-# This file is distributed under the same license as the soft-brightness-plus package.
+# Czech translations for brightness-slider.
+# Copyright (C) 2019-2024 THE brightness-slider AUTHORS
+# This file is distributed under the same license as the brightness-slider package.
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: soft-brightness-plus\n"
-"Report-Msgid-Bugs-To: https://github.com/jkitching/soft-brightness-plus/issues\n"
+"Project-Id-Version: brightness-slider\n"
+"Report-Msgid-Bugs-To: https://github.com/shantanub08/brightness-slider/issues\n"
 "POT-Creation-Date: 2024-01-01 00:00+0000\n"
 "PO-Revision-Date: 2024-01-01 00:00+0000\n"
 "Last-Translator: \n"
@@ -17,8 +17,8 @@ msgstr ""
 "Plural-Forms: nplurals=3; plural=(n==1) ? 0 : (n>=2 && n<=4) ? 1 : 2;\n"
 
 #: src/prefs.js
-msgid "Soft Brightness Plus"
-msgstr "Soft Brightness Plus"
+msgid "Brightness Slider"
+msgstr "Brightness Slider"
 
 #: src/prefs.js
 msgid "Version"
@@ -100,51 +100,55 @@ msgstr "Copyright © 2019-2022 Philippe Troin (<a href=\"https://github.com/F-i-
 msgid "Copyright © 2022-2024 Joel Kitching (<a href=\"https://github.com/jkitching\">jkitching</a> on GitHub)"
 msgstr "Copyright © 2022-2024 Joel Kitching (<a href=\"https://github.com/jkitching\">jkitching</a> na GitHub)"
 
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
+#: src/prefs.js
+msgid "Copyright © 2026 Shantanu Baviskar (<a href=\"https://github.com/shantanub08\">shantanub08</a> on GitHub)"
+msgstr "Copyright © 2026 Shantanu Baviskar (<a href=\"https://github.com/shantanub08\">shantanub08</a> on GitHub)"
+
+#: schemas/org.gnome.shell.extensions.brightness-slider.gschema.xml
 msgid "Use backlight control."
 msgstr "Použít ovládání podsvícení."
 
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
+#: schemas/org.gnome.shell.extensions.brightness-slider.gschema.xml
 msgid "Use the regular backlight control."
 msgstr "Použít standardní ovládání podsvícení."
 
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
+#: schemas/org.gnome.shell.extensions.brightness-slider.gschema.xml
 msgid "Monitors."
 msgstr "Monitory."
 
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
+#: schemas/org.gnome.shell.extensions.brightness-slider.gschema.xml
 msgid "The monitors whose brightness should be adjusted."
 msgstr "Monitory, jejichž jas bude upraven."
 
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
+#: schemas/org.gnome.shell.extensions.brightness-slider.gschema.xml
 msgid "Builtin monitor."
 msgstr "Vestavěný monitor."
 
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
+#: schemas/org.gnome.shell.extensions.brightness-slider.gschema.xml
 msgid "The name of the built-in monitor."
 msgstr "Název vestavěného monitoru."
 
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
+#: schemas/org.gnome.shell.extensions.brightness-slider.gschema.xml
 msgid "Minimum brightness."
 msgstr "Minimální jas."
 
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
+#: schemas/org.gnome.shell.extensions.brightness-slider.gschema.xml
 msgid "Minimum brightness level."
 msgstr "Minimální úroveň jasu."
 
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
+#: schemas/org.gnome.shell.extensions.brightness-slider.gschema.xml
 msgid "Current brightness level."
 msgstr "Aktuální úroveň jasu."
 
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
+#: schemas/org.gnome.shell.extensions.brightness-slider.gschema.xml
 msgid "The current brightness level."
 msgstr "Aktuální úroveň jasu."
 
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
+#: schemas/org.gnome.shell.extensions.brightness-slider.gschema.xml
 msgid "Mouse cursor brightness control."
 msgstr "Ovládání jasu kurzoru myši."
 
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
+#: schemas/org.gnome.shell.extensions.brightness-slider.gschema.xml
 msgid ""
 "When enabled, the mouse cursor follows the brightness setting. When "
 "disabled, the mouse cursor always remains at full brightness. Controlling "
@@ -157,35 +161,35 @@ msgid ""
 msgstr ""
 
 
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
+#: schemas/org.gnome.shell.extensions.brightness-slider.gschema.xml
 msgid "Keyboard shortcut: increase brightness."
 msgstr "Klávesová zkratka: zvýšit jas."
 
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
+#: schemas/org.gnome.shell.extensions.brightness-slider.gschema.xml
 msgid "Keyboard shortcut to increase the brightness by one step (5%). Set to an empty list to disable."
 msgstr "Klávesová zkratka pro zvýšení jasu o jeden krok (5 %). Nastavte na prázdný seznam pro deaktivaci."
 
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
+#: schemas/org.gnome.shell.extensions.brightness-slider.gschema.xml
 msgid "Keyboard shortcut: decrease brightness."
 msgstr "Klávesová zkratka: snížit jas."
 
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
+#: schemas/org.gnome.shell.extensions.brightness-slider.gschema.xml
 msgid "Keyboard shortcut to decrease the brightness by one step (5%). Set to an empty list to disable."
 msgstr "Klávesová zkratka pro snížení jasu o jeden krok (5 %). Nastavte na prázdný seznam pro deaktivaci."
 
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
+#: schemas/org.gnome.shell.extensions.brightness-slider.gschema.xml
 msgid "Debugging."
 msgstr "Ladění."
 
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
+#: schemas/org.gnome.shell.extensions.brightness-slider.gschema.xml
 msgid "Enable debugging for the extension."
 msgstr "Aktivovat ladění rozšíření."
 
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
+#: schemas/org.gnome.shell.extensions.brightness-slider.gschema.xml
 msgid "Gamma curve exponent."
 msgstr "Exponent gama křivky."
 
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
+#: schemas/org.gnome.shell.extensions.brightness-slider.gschema.xml
 msgid ""
 "Controls the gamma curve used for dimming. A value of 1.0 is linear. "
 "Values above 1.0 preserve shadows better while compressing highlights more "
@@ -195,11 +199,11 @@ msgstr ""
 "lépe zachovávají tmavé oblasti a zároveň agresivněji komprimují světlé "
 "oblasti — 2,0 je doporučeným výchozím bodem."
 
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
+#: schemas/org.gnome.shell.extensions.brightness-slider.gschema.xml
 msgid "Per-workspace brightness memory."
 msgstr "Paměť jasu pro každou pracovní plochu."
 
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
+#: schemas/org.gnome.shell.extensions.brightness-slider.gschema.xml
 msgid ""
 "When enabled, the extension remembers a separate brightness level for each "
 "workspace and restores it automatically when you switch. Set brightness on "

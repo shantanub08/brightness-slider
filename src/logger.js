@@ -1,5 +1,6 @@
-// soft-brightness-plus - Control the display's brightness via an alpha channel.
+// brightness-slider - Control the display's brightness via an alpha channel.
 // Copyright (C) 2023 Joel Kitching (jkitching on Github)
+// Copyright (C) 2026 Shantanu Baviskar (shantanub08 on Github)
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by

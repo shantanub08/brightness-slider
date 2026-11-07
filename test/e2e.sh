@@ -15,7 +15,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 GNOME_VERSION="${GNOME_VERSION:-46}"
-IMAGE="sbp-e2e-gnome${GNOME_VERSION}"
+IMAGE="brightness-slider-e2e-gnome${GNOME_VERSION}"
 ZIP="${REPO_ROOT}/build/extension.zip"
 MODES="${1:-both}"
 

@@ -34,7 +34,7 @@ jobs:
             TAG="${GITHUB_REF_NAME}"
           fi
           VERSION="${TAG#v}"
-          ZIP="soft-brightness-plus@joelkitching.com.v${VERSION}.shell-extension.zip"
+          ZIP="brightness-slider@shantanub08.github.io.v${VERSION}.shell-extension.zip"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "zip-name=${ZIP}" >> "$GITHUB_OUTPUT"

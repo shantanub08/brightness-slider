@@ -110,7 +110,7 @@ function effectsOf(actor) {
 // A GammaCurveEffect attached to an actor, as the extension paints them.
 function attachedEffect(brightness, monitorRects) {
     const effect = new GammaCurveEffect(brightness, monitorRects);
-    new Actor().add_effect_with_name('soft-brightness-plus-shader', effect);
+    new Actor().add_effect_with_name('brightness-slider-shader', effect);
     return effect;
 }
 
@@ -166,7 +166,7 @@ describe('OverlayManager.show(): shader target selection', () => {
             'MetaWindowGroup must not carry the shader (cannot be FBO-redirected)');
         assert.equal(effectsOf(global.top_window_group).length, 0);
         const actorGroup = Main.uiGroup.get_children()
-            .find(c => c.name === 'soft-brightness-plus-overlays');
+            .find(c => c.name === 'brightness-slider-overlays');
         assert.ok(actorGroup, 'cursor-clone group is hosted in uiGroup');
         assert.equal(effectsOf(actorGroup).length, 0,
             'cursor-clone group must not carry the shader (moves every frame)');
@@ -507,14 +507,14 @@ describe('GammaCurveEffect.pre_paint', () => {
     test('paints with the effect when the actor has a paint area', () => {
         const actor = new Actor();
         const e = new GammaCurveEffect(0.5, []);
-        actor.add_effect_with_name('soft-brightness-plus-shader', e);
+        actor.add_effect_with_name('brightness-slider-shader', e);
         assert.equal(e.vfunc_pre_paint(null, null), true);
     });
 
     test('skips the effect for actors that paint nothing (no 0-sized FBO)', () => {
         const actor = new Actor();
         const e = new GammaCurveEffect(0.5, []);
-        actor.add_effect_with_name('soft-brightness-plus-shader', e);
+        actor.add_effect_with_name('brightness-slider-shader', e);
         for (const size of [[0, 0], [1024, 0], [0, 32]]) {
             actor._paintVolumeSize = size;
             assert.equal(e.vfunc_pre_paint(null, null), false, `paint volume ${size}`);
@@ -524,7 +524,7 @@ describe('GammaCurveEffect.pre_paint', () => {
     test('falls back to the allocation when the paint volume is unknown', () => {
         const actor = new Actor();
         const e = new GammaCurveEffect(0.5, []);
-        actor.add_effect_with_name('soft-brightness-plus-shader', e);
+        actor.add_effect_with_name('brightness-slider-shader', e);
         actor._paintVolumeSize = null;
         actor._allocationSize = [1024, 768];
         assert.equal(e.vfunc_pre_paint(null, null), true);

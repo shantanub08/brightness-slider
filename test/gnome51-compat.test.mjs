@@ -198,7 +198,7 @@ describe('GammaCurveEffect on Clutter.ShaderEffect (GS 51+)', () => {
     function effectOn(brightness, monitorRects) {
         const actor = new Clutter.Actor();
         const e = new ShaderGammaCurveEffect(brightness, monitorRects);
-        actor.add_effect_with_name('soft-brightness-plus-shader', e);
+        actor.add_effect_with_name('brightness-slider-shader', e);
         return e;
     }
 

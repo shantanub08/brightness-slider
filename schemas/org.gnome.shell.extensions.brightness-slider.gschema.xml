@@ -1,16 +1,16 @@
-<schemalist gettext-domain="soft-brightness-plus">
-  <enum id="org.gnome.shell.extensions.soft-brightness-plus.monitors">
+<schemalist gettext-domain="brightness-slider">
+  <enum id="org.gnome.shell.extensions.brightness-slider.monitors">
     <value value="0" nick="all"/>
     <value value="1" nick="built-in"/>
     <value value="2" nick="external"/>
   </enum>
-  <schema id="org.gnome.shell.extensions.soft-brightness-plus" path="/org/gnome/shell/extensions/soft-brightness-plus/">
+  <schema id="org.gnome.shell.extensions.brightness-slider" path="/org.gnome.shell.extensions.brightness-slider/">
     <key name="use-backlight" type="b">
       <default>false</default>
       <summary>Use backlight control.</summary>
       <description>Use the regular backlight control.</description>
     </key>
-    <key name="monitors" enum="org.gnome.shell.extensions.soft-brightness-plus.monitors">
+    <key name="monitors" enum="org.gnome.shell.extensions.brightness-slider.monitors">
       <default>"all"</default>
       <summary>Monitors.</summary>
       <description>The monitors whose brightness should be adjusted.</description>

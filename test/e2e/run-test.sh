@@ -4,7 +4,7 @@
 set -euo pipefail
 
 MODE="${1:-wayland}"
-UUID="soft-brightness-plus@joelkitching.com"
+UUID="brightness-slider@shantanub08.github.io"
 EXT_DIR="${HOME}/.local/share/gnome-shell/extensions/${UUID}"
 LOG="/tmp/gnome-shell-${MODE}.log"
 SETTLE=12
@@ -45,7 +45,7 @@ set -euo pipefail
 MODE="$1"; UUID="$2"; LOG="$3"; SETTLE="$4"
 EXT_DIR="${HOME}/.local/share/gnome-shell/extensions/${UUID}"
 SCHEMA_DIR="${EXT_DIR}/schemas"
-SCHEMA_ID="org.gnome.shell.extensions.soft-brightness-plus"
+SCHEMA_ID="org.gnome.shell.extensions.brightness-slider"
 
 # Enable the extension before gnome-shell reads settings
 gsettings set org.gnome.shell enabled-extensions "['${UUID}']"
@@ -196,7 +196,7 @@ sleep 3
 if grep -q "current-brightness=0.5\|_on_brightness_change.*0.5\|show(0.5\|show.*brightness.*0.5" "${LOG}" 2>/dev/null; then
     echo "  PASS: extension log confirms brightness change was applied"
 else
-    if grep -q "OverlayManager\|GammaCurveEffect\|soft-brightness.*show\|_on_brightness" "${LOG}" 2>/dev/null; then
+    if grep -q "OverlayManager\|GammaCurveEffect\|brightness-slider.*show\|_on_brightness" "${LOG}" 2>/dev/null; then
         echo "  PASS: extension log shows overlay activity"
     else
         echo "  WARN: could not confirm brightness change in log"

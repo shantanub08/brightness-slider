@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Runs inside the screenshot Docker container.
-# Produces docs/preferences.png and docs/soft-brightness-plus.png.
+# Produces docs/preferences.png and docs/brightness-slider.png.
 set -euo pipefail
 
-UUID="soft-brightness-plus@joelkitching.com"
+UUID="brightness-slider@shantanub08.github.io"
 EXT_DIR="${HOME}/.local/share/gnome-shell/extensions/${UUID}"
 SETTLE=15
 
@@ -36,7 +36,7 @@ gsettings set org.gnome.shell enabled-extensions "['${UUID}']"
 # Show the extension's independent overlay slider in quick settings
 # (the container has no backlight hardware for the default mode).
 GSETTINGS_SCHEMA_DIR="${EXT_DIR}/schemas" \
-    gsettings set org.gnome.shell.extensions.soft-brightness-plus use-backlight false
+    gsettings set org.gnome.shell.extensions.brightness-slider use-backlight false
 
 # gnome-shell must be running BEFORE the prefs screenshot:
 # `gnome-extensions prefs` asks the shell (org.gnome.Shell.Extensions) to
@@ -73,7 +73,7 @@ echo "=== Preferences screenshot ==="
 gnome-extensions prefs "${UUID}" || true
 sleep 4
 
-WIN=$(xdotool search --onlyvisible --name "Soft Brightness" 2>/dev/null | head -1 || true)
+WIN=$(xdotool search --onlyvisible --name "Brightness Slider" 2>/dev/null | head -1 || true)
 [ -z "$WIN" ] && \
     WIN=$(xdotool search --onlyvisible --class "org.gnome.Shell.Extensions" 2>/dev/null | head -1 || true)
 [ -z "$WIN" ] && \
@@ -130,8 +130,8 @@ if [ -n "${BOUNDS}" ]; then
     PAD=12
     import -window root \
         -crop "$((SW + PAD*2))x$((SH + PAD*2))+$((SX - PAD))+$((SY - PAD))" \
-        /docs/soft-brightness-plus.png
-    echo "  Saved soft-brightness-plus.png (${SW}x${SH} at ${SX},${SY})"
+        /docs/brightness-slider.png
+    echo "  Saved brightness-slider.png (${SW}x${SH} at ${SX},${SY})"
 else
     echo "  AT-SPI failed (see /tmp/atspi.log); falling back to fixed crop"
     cat /tmp/atspi.log >&2 || true
@@ -139,8 +139,8 @@ else
     import -window root /docs/qs-debug-root.png || true
     # QS panel opens at top-right (x ~874..1272, y ~38..212 on 1280x800);
     # capture the whole panel so the slider is shown in context.
-    import -window root -crop 398x176+874+36 /docs/soft-brightness-plus.png
-    echo "  Saved soft-brightness-plus.png (fixed crop)"
+    import -window root -crop 398x176+874+36 /docs/brightness-slider.png
+    echo "  Saved brightness-slider.png (fixed crop)"
 fi
 
 kill "${GS_PID}" 2>/dev/null || true

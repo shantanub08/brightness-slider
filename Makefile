@@ -1,6 +1,6 @@
 VERSION  := 52
-UUID     := soft-brightness-plus@joelkitching.com
-DOMAIN   := soft-brightness-plus
+UUID     := brightness-slider@shantanub08.github.io
+DOMAIN   := brightness-slider
 
 INSTALL_DIR := $(HOME)/.local/share/gnome-shell/extensions/$(UUID)
 BUILD_DIR   := build
@@ -8,7 +8,7 @@ ZIP_NAME    := $(UUID).v$(VERSION).shell-extension.zip
 
 # Source lists
 JS_SOURCES := src/cursor.js src/extension.js src/logger.js src/prefs.js src/utils.js
-SCHEMA_XML := schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
+SCHEMA_XML := schemas/org.gnome.shell.extensions.brightness-slider.gschema.xml
 DBUS_XML   := dbus-interfaces/org.gnome.Mutter.DisplayConfig.xml
 
 # Translations

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Locate the Soft Brightness Plus slider in the GNOME Shell quick-settings
+Locate the Brightness Slider quick-settings slider
 panel via AT-SPI and print its screen bounding box: X Y W H
 """
 import sys

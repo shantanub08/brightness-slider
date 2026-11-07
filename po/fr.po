@@ -1,11 +1,11 @@
-# French translations for soft-brightness-plus.
+# French translations for brightness-slider.
 # Copyright (C) 2019-2024 Philippe Troin, Joel Kitching
-# This file is distributed under the same license as the soft-brightness-plus package.
+# This file is distributed under the same license as the brightness-slider package.
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: soft-brightness-plus\n"
-"Report-Msgid-Bugs-To: https://github.com/jkitching/soft-brightness-plus/issues\n"
+"Project-Id-Version: brightness-slider\n"
+"Report-Msgid-Bugs-To: https://github.com/shantanub08/brightness-slider/issues\n"
 "POT-Creation-Date: 2024-01-01 00:00+0000\n"
 "PO-Revision-Date: 2024-01-01 00:00+0000\n"
 "Last-Translator: Philippe Troin (F-i-f on Github)\n"
@@ -17,7 +17,7 @@ msgstr ""
 "Plural-Forms: nplurals=2; plural=(n > 1);\n"
 
 #: src/prefs.js
-msgid "Soft Brightness Plus"
+msgid "Brightness Slider"
 msgstr "Luminosité logicielle"
 
 #: src/prefs.js
@@ -100,51 +100,55 @@ msgstr "Copyright © 2019-2022 Philippe Troin (<a href=\"https://github.com/F-i-
 msgid "Copyright © 2022-2024 Joel Kitching (<a href=\"https://github.com/jkitching\">jkitching</a> on GitHub)"
 msgstr "Copyright © 2022-2024 Joel Kitching (<a href=\"https://github.com/jkitching\">jkitching</a> sur GitHub)"
 
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
+#: src/prefs.js
+msgid "Copyright © 2026 Shantanu Baviskar (<a href=\"https://github.com/shantanub08\">shantanub08</a> on GitHub)"
+msgstr "Copyright © 2026 Shantanu Baviskar (<a href=\"https://github.com/shantanub08\">shantanub08</a> on GitHub)"
+
+#: schemas/org.gnome.shell.extensions.brightness-slider.gschema.xml
 msgid "Use backlight control."
 msgstr "Utilisation du rétroéclairage."
 
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
+#: schemas/org.gnome.shell.extensions.brightness-slider.gschema.xml
 msgid "Use the regular backlight control."
 msgstr "Utiliser le contrôle de luminosité du matériel."
 
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
+#: schemas/org.gnome.shell.extensions.brightness-slider.gschema.xml
 msgid "Monitors."
 msgstr "Moniteurs."
 
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
+#: schemas/org.gnome.shell.extensions.brightness-slider.gschema.xml
 msgid "The monitors whose brightness should be adjusted."
 msgstr "Les moniteurs sur lesquels la luminosité sera ajustée."
 
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
+#: schemas/org.gnome.shell.extensions.brightness-slider.gschema.xml
 msgid "Builtin monitor."
 msgstr "Écran intégré."
 
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
+#: schemas/org.gnome.shell.extensions.brightness-slider.gschema.xml
 msgid "The name of the built-in monitor."
 msgstr "Le nom de l'écran intégré."
 
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
+#: schemas/org.gnome.shell.extensions.brightness-slider.gschema.xml
 msgid "Minimum brightness."
 msgstr "Luminosité minimale."
 
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
+#: schemas/org.gnome.shell.extensions.brightness-slider.gschema.xml
 msgid "Minimum brightness level."
 msgstr "Niveau de luminosité minimale."
 
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
+#: schemas/org.gnome.shell.extensions.brightness-slider.gschema.xml
 msgid "Current brightness level."
 msgstr "Luminosité actuelle."
 
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
+#: schemas/org.gnome.shell.extensions.brightness-slider.gschema.xml
 msgid "The current brightness level."
 msgstr "Le niveau de luminosité actuel."
 
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
+#: schemas/org.gnome.shell.extensions.brightness-slider.gschema.xml
 msgid "Mouse cursor brightness control."
 msgstr "Contrôle de la luminosité du curseur."
 
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
+#: schemas/org.gnome.shell.extensions.brightness-slider.gschema.xml
 msgid ""
 "When enabled, the mouse cursor follows the brightness setting. When "
 "disabled, the mouse cursor always remains at full brightness. Controlling "
@@ -157,35 +161,35 @@ msgid ""
 msgstr ""
 
 
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
+#: schemas/org.gnome.shell.extensions.brightness-slider.gschema.xml
 msgid "Keyboard shortcut: increase brightness."
 msgstr "Raccourci clavier : augmenter la luminosité."
 
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
+#: schemas/org.gnome.shell.extensions.brightness-slider.gschema.xml
 msgid "Keyboard shortcut to increase the brightness by one step (5%). Set to an empty list to disable."
 msgstr "Raccourci clavier pour augmenter la luminosité d'un cran (5 %). Définir sur une liste vide pour désactiver."
 
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
+#: schemas/org.gnome.shell.extensions.brightness-slider.gschema.xml
 msgid "Keyboard shortcut: decrease brightness."
 msgstr "Raccourci clavier : diminuer la luminosité."
 
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
+#: schemas/org.gnome.shell.extensions.brightness-slider.gschema.xml
 msgid "Keyboard shortcut to decrease the brightness by one step (5%). Set to an empty list to disable."
 msgstr "Raccourci clavier pour diminuer la luminosité d'un cran (5 %). Définir sur une liste vide pour désactiver."
 
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
+#: schemas/org.gnome.shell.extensions.brightness-slider.gschema.xml
 msgid "Debugging."
 msgstr "Débogage."
 
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
+#: schemas/org.gnome.shell.extensions.brightness-slider.gschema.xml
 msgid "Enable debugging for the extension."
 msgstr "Activer le mode de débogage de l'extension."
 
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
+#: schemas/org.gnome.shell.extensions.brightness-slider.gschema.xml
 msgid "Gamma curve exponent."
 msgstr "Exposant de la courbe gamma."
 
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
+#: schemas/org.gnome.shell.extensions.brightness-slider.gschema.xml
 msgid ""
 "Controls the gamma curve used for dimming. A value of 1.0 is linear. "
 "Values above 1.0 preserve shadows better while compressing highlights more "
@@ -196,11 +200,11 @@ msgstr ""
 "sombres tout en compressant davantage les zones claires — 2,0 est la valeur "
 "recommandée."
 
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
+#: schemas/org.gnome.shell.extensions.brightness-slider.gschema.xml
 msgid "Per-workspace brightness memory."
 msgstr "Mémorisation de la luminosité par espace de travail."
 
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
+#: schemas/org.gnome.shell.extensions.brightness-slider.gschema.xml
 msgid ""
 "When enabled, the extension remembers a separate brightness level for each "
 "workspace and restores it automatically when you switch. Set brightness on "

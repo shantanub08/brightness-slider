@@ -8,7 +8,7 @@ import Gio from 'gi://Gio';
 import System from 'system';
 
 // Compile schema into a temp dir
-const schemaDir = GLib.build_filenamev([GLib.get_tmp_dir(), 'sbp-schema-test']);
+const schemaDir = GLib.build_filenamev([GLib.get_tmp_dir(), 'brightness-slider-schema-test']);
 GLib.mkdir_with_parents(schemaDir, 0o755);
 
 const srcSchemaDir = GLib.build_filenamev([GLib.get_current_dir(), 'schemas']);
@@ -28,7 +28,7 @@ const source = Gio.SettingsSchemaSource.new_from_directory(
     false
 );
 
-const SCHEMA_ID = 'org.gnome.shell.extensions.soft-brightness-plus';
+const SCHEMA_ID = 'org.gnome.shell.extensions.brightness-slider';
 const schema = source.lookup(SCHEMA_ID, false);
 
 if (!schema) {

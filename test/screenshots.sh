@@ -2,11 +2,11 @@
 # Screenshot runner: builds a Docker image and captures docs screenshots
 # inside a reproducible GNOME Shell environment.
 # Usage: test/screenshots.sh
-# Output: updates docs/preferences.png and docs/soft-brightness-plus.png
+# Output: updates docs/preferences.png and docs/brightness-slider.png
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-IMAGE="sbp-screenshots"
+IMAGE="brightness-slider-screenshots"
 ZIP="${REPO_ROOT}/build/extension.zip"
 
 command -v docker >/dev/null 2>&1 || { echo "ERROR: docker not found in PATH"; exit 1; }
@@ -30,7 +30,7 @@ docker run --rm \
     -v "${OUTDIR}:/docs" \
     "${IMAGE}" \
     /run-screenshots.sh
-mv "${OUTDIR}/preferences.png" "${OUTDIR}/soft-brightness-plus.png" "${REPO_ROOT}/docs/"
+mv "${OUTDIR}/preferences.png" "${OUTDIR}/brightness-slider.png" "${REPO_ROOT}/docs/"
 # Keep the diagnostic root capture (if any) out of docs/ but inspectable
 [ -f "${OUTDIR}/qs-debug-root.png" ] && mv "${OUTDIR}/qs-debug-root.png" "${REPO_ROOT}/build/" || true
 rm -rf "${OUTDIR}"
@@ -38,4 +38,4 @@ rm -rf "${OUTDIR}"
 echo ""
 echo "Done. Updated:"
 echo "  docs/preferences.png"
-echo "  docs/soft-brightness-plus.png"
+echo "  docs/brightness-slider.png"
