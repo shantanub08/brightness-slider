@@ -73,6 +73,8 @@ class Actor {
     is_in_clone_paint() { return this._inClonePaint ?? false; }
     set_position(x, y) { this._position = [x, y]; }
     set_size(w, h) { this._size = [w, h]; }
+    queue_redraw() { this._redraws = (this._redraws ?? 0) + 1; }
+    queue_redraw_with_clip(_clip) { this._redraws = (this._redraws ?? 0) + 1; }
     set(props) { Object.assign(this, props); }
     show() { this.visible = true; }
     hide() { this.visible = false; }

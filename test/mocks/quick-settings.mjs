@@ -9,6 +9,8 @@ export class QuickSlider {
             _connections: [],
             value: 1.0,
             accessible_name: '',
+            get_parent() { return null; },
+            destroy() {},
             connect(signal, fn) {
                 const id = this._connections.length + 1;
                 this._connections.push({ id, signal, fn });

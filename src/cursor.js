@@ -31,17 +31,44 @@ import Meta from 'gi://Meta';
 // Scale handling: cursor sprite textures arrive at different scales
 // depending on the surface under the pointer (shell chrome vs app
 // windows vs XWayland).  The content reports its preferred size in
-// logical pixels by dividing the texture size by the guessed sprite
-// scale, so the rendered cursor size stays constant across surfaces.
+// logical pixels by dividing the texture size by the sprite scale, so
+// the rendered cursor size stays constant across surfaces.
+//
+// There are two kinds of sprites:
+//  - Theme cursors (Xcursor).  On Wayland, mutter renders these at
+//    ceil(monitor scale) so the texture is larger than the logical
+//    cursor; Meta.CursorTracker.get_scale() still reports 1.0, so the
+//    scale has to be guessed from the texture size (as the magnifier
+//    does).
+//  - Client-provided Wayland cursor surfaces.  get_scale() reports
+//    1 / buffer_scale (e.g. 0.5 for a 2x buffer), which is the real
+//    texture-to-logical factor.  Guessing from the size gets these
+//    wrong (a 64 px buffer for a 32 px cursor was rendered at 64 px),
+//    which made the cursor grow whenever the shape changed.
 export const MouseSpriteContent = GObject.registerClass({
     Implements: [Clutter.Content],
 }, class MouseSpriteContent extends GObject.Object {
     _init() {
         super._init();
         this._scale = 1.0;
+        this._trackerScale = 1.0;
         this._monitorScale = 1.0;
         this._texture = null;
         this._dimFactor = 1.0;
+    }
+
+    // Meta.CursorTracker.get_scale() for the current sprite.  Kept in
+    // sync by CursorManager whenever the cursor changes.
+    get trackerScale() {
+        return this._trackerScale;
+    }
+
+    set trackerScale(scale) {
+        if (this._trackerScale === scale)
+            return;
+        this._trackerScale = scale;
+        if (this._recomputeScale())
+            this.invalidate_size();
     }
 
     get dimFactor() {
@@ -98,13 +125,22 @@ export const MouseSpriteContent = GObject.registerClass({
         if (!this._texture)
             return 1;
 
+        // Client cursor surface: get_scale() is 1 / buffer_scale, the
+        // exact factor from texture pixels to logical pixels.
+        if (this._trackerScale > 0 && this._trackerScale < 1)
+            return 1 / this._trackerScale;
+
+        const cursorSize = Meta.prefs_get_cursor_size();
+        if (!(cursorSize > 0))
+            return 1;
+
         /* This is a workaround to guess the sprite scale; while it works fine
          * in normal scenarios, it's not guaranteed to work in all the cases,
          * and so we should actually add an API to mutter that will allow us
          * to know the real sprite texture scaling in order to adapt it to the
          * wanted one. */
         let avgSize = (this._texture.get_width() + this._texture.get_height()) / 2;
-        return Math.max(1, Math.floor(avgSize / Meta.prefs_get_cursor_size() + .1));
+        return Math.max(1, Math.floor(avgSize / cursorSize + .1));
     }
 
     _recomputeScale() {

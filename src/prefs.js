@@ -138,6 +138,58 @@ const PreferencesPage = GObject.registerClass(class PreferencesPage extends Adw.
 
         {
             const group = new Adw.PreferencesGroup({
+                title: _('Desktop & External Displays (DDC/CI)'),
+                description: _('Control hardware brightness & contrast simultaneously on supported desktop monitors via DDC/CI.'),
+            });
+
+            this.ddc_control = new Adw.SwitchRow({
+                title: _('Enable DDC/CI hardware control'),
+                subtitle: _('Adjust physical monitor brightness & contrast using ddcutil.'),
+            });
+            this._settings.bind('ddc-enabled', this.ddc_control, 'active', Gio.SettingsBindFlags.DEFAULT);
+            group.add(this.ddc_control);
+
+            this.software_dim_ratio_control = new Adw.ActionRow({
+                title: _('Software dimming space on slider:'),
+                subtitle: _('Portion of slider allocated to software dimming when hardware brightness is at 0.'),
+            });
+            {
+                const scale = new Gtk.Scale({
+                    orientation: Gtk.Orientation.HORIZONTAL,
+                    adjustment: new Gtk.Adjustment({
+                        lower: 0.05, upper: 0.50,
+                        step_increment: 0.01, page_increment: 0.05,
+                        value: this._settings.get_double('software-dim-ratio'),
+                    }),
+                    digits: 2,
+                    draw_value: true,
+                    value_pos: Gtk.PositionType.RIGHT,
+                    hexpand: true,
+                    width_request: 200,
+                    valign: Gtk.Align.CENTER,
+                });
+                scale.connect('value-changed', () => {
+                    this._settings.set_double('software-dim-ratio', scale.get_value());
+                });
+                this._settings.connect('changed::software-dim-ratio', () => {
+                    scale.set_value(this._settings.get_double('software-dim-ratio'));
+                });
+                this.software_dim_ratio_control.add_suffix(scale);
+            }
+            group.add(this.software_dim_ratio_control);
+
+            this.sync_monitors_control = new Adw.SwitchRow({
+                title: _('Synchronize all monitors'),
+                subtitle: _('Adjust brightness and contrast across all monitors in unison.'),
+            });
+            this._settings.bind('sync-monitors', this.sync_monitors_control, 'active', Gio.SettingsBindFlags.DEFAULT);
+            group.add(this.sync_monitors_control);
+
+            this.add(group);
+        }
+
+        {
+            const group = new Adw.PreferencesGroup({
                 title: _('Keyboard shortcuts'),
                 description: _('Default shortcuts use Shift + hardware brightness keys. Clear to disable; use gsettings to set a custom binding.'),
             });

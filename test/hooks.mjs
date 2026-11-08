@@ -18,6 +18,7 @@ const MAP = {
     'resource:///org/gnome/shell/ui/main.js':              m('main.mjs'),
     'resource:///org/gnome/shell/ui/pointerWatcher.js':    m('pointer-watcher.mjs'),
     'resource:///org/gnome/shell/ui/quickSettings.js':     m('quick-settings.mjs'),
+    'resource:///org/gnome/shell/ui/slider.js':            m('slider.mjs'),
     'resource:///org/gnome/shell/extensions/extension.js': m('extension-base.mjs'),
 };
 

@@ -33,6 +33,8 @@ import { Extension, gettext as _ } from 'resource:///org/gnome/shell/extensions/
 import * as Logger from './logger.js';
 import * as Utils from './utils.js';
 import { MouseSpriteContent } from './cursor.js';
+import { DdcController } from './ddcutil.js';
+import { DualZoneSlider, sliderToHardwareAndSoftware, hardwareAndSoftwareToSlider } from './slider.js';
 
 // In GS 51, ui/pointerWatcher.js was removed; see CursorTrackerPointerWatcher.
 const PointerWatcher = parseInt(Config.PACKAGE_VERSION) < 51
@@ -275,7 +277,7 @@ export default class BrightnessSliderExtension extends Extension {
         this._monitorManager = new MonitorManager(this._logger, this._settings, this.path);
         this._overlayManager = new OverlayManager(this._logger, this._settings, this._monitorManager);
         this._cursorManager = new CursorManager(this._logger, this._settings, this._overlayManager);
-        this._indicatorManager = new IndicatorManager(this._logger, this._settings);
+        this._indicatorManager = new IndicatorManager(this._logger, this._settings, this._overlayManager, this._monitorManager);
         this._screenshotManager = new ScreenshotManager(this._logger);
 
         this._monitorManager.setChangeHook(() => {
@@ -360,6 +362,12 @@ export default class BrightnessSliderExtension extends Extension {
     }
 
     _adjustBrightness(delta) {
+        const targetSlider = this._indicatorManager?.getSliderForCurrentCursor();
+        if (targetSlider) {
+            targetSlider.stepDelta(delta);
+            return;
+        }
+
         const minBrightness = this._settings.get_double('min-brightness');
         const current = this._getBrightnessLevel();
         // Round to nearest step to avoid floating-point drift
@@ -536,103 +544,145 @@ export class ScreenshotManager {
     }
 }
 
-// Custom QuickSlider to control overlay brightness independently from hardware brightness
-const OverlayBrightnessItem = GObject.registerClass(
-class OverlayBrightnessItem extends QuickSlider {
-    _init(logger, settings) {
+// // QuickSlider item representing a monitor (external DDC/CI or fallback overlay)
+export const MonitorBrightnessItem = GObject.registerClass(
+class MonitorBrightnessItem extends QuickSlider {
+    _init(logger, settings, overlayManager, ddcController, monitorInfo, onSyncCallback = null) {
         super._init({
             iconName: 'display-brightness-symbolic',
         });
 
         this._logger = logger;
         this._settings = settings;
+        this._overlayManager = overlayManager;
+        this._ddcController = ddcController;
+        this._monitorInfo = monitorInfo || { displayName: _('Display'), connectorName: '', bus: null, monitorIndex: 0 };
+        this._onSyncCallback = onSyncCallback;
 
-        this.slider.accessible_name = _('Overlay Brightness');
-
-        // Disable the menu button since we don't need per-monitor controls
         this.menuEnabled = false;
 
-        // Color icon to distinguish from hardware brightness slider
-        // Using accent color to make it visually distinct
-        this._icon.style = 'color: -st-accent-color;';
+        // Keep monochrome icon (do not set color: -st-accent-color)
+        this._icon.style = '';
 
-        // Connect slider value changes to our brightness setter
-        this._sliderChangedId = this.slider.connect('notify::value',
-            () => this._onSliderChanged());
+        const monitorName = this._monitorInfo.displayName || this._monitorInfo.connectorName || _('Display');
+        this.slider.accessible_name = `${monitorName} ${_('Brightness')}`;
 
-        // Watch for min-brightness setting changes
-        this._minBrightnessChangedId = this._settings.connect('changed::min-brightness',
-            () => {
-                const minBrightness = this._settings.get_double('min-brightness');
-                this._logger.log_debug(`OverlayBrightnessItem: min-brightness changed to ${minBrightness}`);
-                // If current brightness is below new minimum, adjust it
-                if (this.slider.value < minBrightness) {
-                    this._onSliderChanged();
-                }
-            });
+        // Replace default slider with DualZoneSlider
+        const splitRatio = this._settings.get_double('software-dim-ratio') || 0.25;
+        const oldSlider = this.slider;
+        const bin = oldSlider?.get_parent ? oldSlider.get_parent() : null;
+        this._dualSlider = new DualZoneSlider(1.0, splitRatio);
+        if (bin) {
+            bin.child = this._dualSlider;
+        }
+        if (oldSlider && typeof oldSlider.destroy === 'function') {
+            oldSlider.destroy();
+        }
+        this.slider = this._dualSlider;
 
-        // Watch for current-brightness setting changes (e.g., from hardware brightness watcher)
-        this._brightnessChangedId = this._settings.connect('changed::current-brightness',
-            () => {
-                this._logger.log_debug('OverlayBrightnessItem: current-brightness changed externally, syncing');
-                this._sync();
-            });
+        // Connect slider value changes
+        this._sliderChangedId = this.slider.connect('notify::value', () => this._onSliderChanged());
 
-        // Watch for use-backlight setting changes to show/hide slider
-        this._useBacklightChangedId = this._settings.connect('changed::use-backlight',
-            () => {
-                this._updateVisibility();
-            });
+        // Watch settings
+        this._splitRatioChangedId = this._settings.connect('changed::software-dim-ratio', () => {
+            this._dualSlider.splitRatio = this._settings.get_double('software-dim-ratio');
+        });
 
-        // Set initial value from current brightness
-        this._sync();
-
-        // Set initial visibility based on use-backlight setting
-        this._updateVisibility();
-
-        // Check if current brightness is below minimum and fix it if needed
-        const minBrightness = this._settings.get_double('min-brightness');
-        if (this.slider.value < minBrightness) {
-            this._logger.log_debug(`OverlayBrightnessItem: initial brightness ${this.slider.value} below minimum ${minBrightness}, correcting`);
+        this._minBrightnessChangedId = this._settings.connect('changed::min-brightness', () => {
             this._onSliderChanged();
+        });
+
+        // Initialize from DDC/CI hardware if available, else settings
+        this._initFromHardware();
+    }
+
+    get monitorIndex() {
+        return this._monitorInfo?.monitorIndex ?? 0;
+    }
+
+    get bus() {
+        return this._monitorInfo?.bus ?? null;
+    }
+
+    async _initFromHardware() {
+        const splitRatio = this._dualSlider.splitRatio;
+        const minBrightness = this._settings.get_double('min-brightness');
+        const ddcEnabled = this._settings.get_boolean('ddc-enabled');
+
+        if (ddcEnabled && this._monitorInfo?.bus !== null && this._ddcController) {
+            const values = await this._ddcController.getBrightnessAndContrast(this._monitorInfo.bus);
+            if (values && values.brightness !== null) {
+                const sliderVal = hardwareAndSoftwareToSlider(values.brightness, 1.0, splitRatio, minBrightness);
+                this.setSliderValue(sliderVal, false);
+                this._updateIcon();
+                return;
+            }
         }
 
-        this._logger.log_debug('OverlayBrightnessItem: initialized');
+        const currentBrightness = this._settings.get_double('current-brightness');
+        const initialVal = hardwareAndSoftwareToSlider(100, currentBrightness, splitRatio, minBrightness);
+        this.setSliderValue(initialVal, false);
+        this._updateIcon();
+    }
+
+    setSliderValue(val, triggerChange = true) {
+        const clamped = Math.max(0.0, Math.min(1.0, val));
+        if (Math.abs(this.slider.value - clamped) < 0.001)
+            return;
+
+        if (!triggerChange)
+            this.slider.block_signal_handler(this._sliderChangedId);
+        this.slider.value = clamped;
+        if (!triggerChange)
+            this.slider.unblock_signal_handler(this._sliderChangedId);
+
+        this._updateIcon();
+    }
+
+    stepDelta(delta) {
+        const stepped = Math.round((this.slider.value + delta) / 0.05) * 0.05;
+        this.setSliderValue(stepped, true);
+    }
+
+    _updateIcon() {
+        const isSoftwareDim = this.slider.value < this._dualSlider.splitRatio;
+        const targetIcon = isSoftwareDim ? 'night-light-symbolic' : 'display-brightness-symbolic';
+        if (this._icon.icon_name !== targetIcon) {
+            this._icon.icon_name = targetIcon;
+        }
     }
 
     _onSliderChanged() {
-        let value = this.slider.value;
+        const value = this.slider.value;
+        const splitRatio = this._dualSlider.splitRatio;
         const minBrightness = this._settings.get_double('min-brightness');
+        const ddcEnabled = this._settings.get_boolean('ddc-enabled');
 
-        // Enforce minimum brightness to prevent completely black screen
-        if (value < minBrightness) {
-            this._logger.log_debug(`OverlayBrightnessItem: slider value ${value} below minimum ${minBrightness}, clamping`);
-            value = minBrightness;
-            // Update slider to show the clamped value
-            this.slider.block_signal_handler(this._sliderChangedId);
-            this.slider.value = value;
-            this.slider.unblock_signal_handler(this._sliderChangedId);
+        this._updateIcon();
+
+        const { hardwareBrightness, hardwareContrast, softwareDim } =
+            sliderToHardwareAndSoftware(value, splitRatio, minBrightness);
+
+        if (ddcEnabled && this._monitorInfo?.bus !== null && this._ddcController) {
+            this._ddcController.setBrightnessAndContrast(
+                this._monitorInfo.bus,
+                hardwareBrightness,
+                hardwareContrast
+            );
         }
 
-        this._logger.log_debug(`OverlayBrightnessItem: slider changed to ${value}`);
-        // Write directly to the setting - this will trigger overlay updates via changed::current-brightness
-        this._settings.set_double('current-brightness', value);
-    }
+        if (this._overlayManager) {
+            if (softwareDim < 1.0) {
+                this._overlayManager.show(softwareDim);
+            } else {
+                this._overlayManager.hide();
+            }
+        }
+        this._settings.set_double('current-brightness', softwareDim);
 
-    _sync() {
-        // Block signal to avoid feedback loop when updating slider
-        this.slider.block_signal_handler(this._sliderChangedId);
-        const brightness = this._settings.get_double('current-brightness');
-        this.slider.value = brightness;
-        this.slider.unblock_signal_handler(this._sliderChangedId);
-        this._logger.log_debug(`OverlayBrightnessItem: synced to brightness ${brightness}`);
-    }
-
-    _updateVisibility() {
-        const useBacklight = this._settings.get_boolean('use-backlight');
-        // Show overlay slider only when use-backlight is OFF (overlay-only mode)
-        this.visible = !useBacklight;
-        this._logger.log_debug(`OverlayBrightnessItem: visibility set to ${this.visible} (use-backlight=${useBacklight})`);
+        if (this._onSyncCallback && this._settings.get_boolean('sync-monitors')) {
+            this._onSyncCallback(this, value);
+        }
     }
 
     destroy() {
@@ -640,38 +690,38 @@ class OverlayBrightnessItem extends QuickSlider {
             this.slider.disconnect(this._sliderChangedId);
             this._sliderChangedId = null;
         }
+        if (this._splitRatioChangedId) {
+            this._settings.disconnect(this._splitRatioChangedId);
+            this._splitRatioChangedId = null;
+        }
         if (this._minBrightnessChangedId) {
             this._settings.disconnect(this._minBrightnessChangedId);
             this._minBrightnessChangedId = null;
         }
-        if (this._brightnessChangedId) {
-            this._settings.disconnect(this._brightnessChangedId);
-            this._brightnessChangedId = null;
-        }
-        if (this._useBacklightChangedId) {
-            this._settings.disconnect(this._useBacklightChangedId);
-            this._useBacklightChangedId = null;
-        }
-        this._logger.log_debug('OverlayBrightnessItem: destroyed');
         super.destroy();
     }
 });
 
-// Monkey-patched brightness indicator methods
-class IndicatorManager {
-    constructor(logger, settings) {
+// Alias for backwards compatibility
+export const OverlayBrightnessItem = MonitorBrightnessItem;
+
+// IndicatorManager manages QuickSettings integration, DDC/CI monitor discovery and sliders
+export class IndicatorManager {
+    constructor(logger, settings, overlayManager = null, monitorManager = null) {
         this._logger = logger;
         this._settings = settings;
+        this._overlayManager = overlayManager;
+        this._monitorManager = monitorManager;
 
         this._enableTimeoutId = null;
+        this._ddcController = new DdcController(logger);
 
-        // Set/destroyed by _enable/_disable
+        this._sliderItems = [];
         this._indicator = null;
         this._slider = null;
-
-        // Custom slider approach
-        this._overlayBrightnessItem = null;
         this._hardwareBrightnessChangedId = null;
+        this._monitorsChangedId = null;
+        this._settingsCallbacks = [];
     }
 
     getProxy() {
@@ -679,130 +729,246 @@ class IndicatorManager {
     }
 
     enable() {
-        // Subsequent 100ms checks: Wait until the _brightness object has been
-        // set on quickSettings.
         let attempt = 0;
         this._enableTimeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 100, () => {
-            if (Main.panel.statusArea.quickSettings?._brightness) {
-                this._logger.log_debug('Brightness slider ready, continue enable procedure');
+            const quickSettings = Main.panel.statusArea.quickSettings;
+            if (quickSettings?.menu) {
+                this._logger.log_debug('QuickSettings menu ready, initializing desktop brightness sliders');
                 this._enableTimeoutId = null;
                 this._enable();
                 return GLib.SOURCE_REMOVE;
             }
 
-            if (attempt >= 5) {
-                this._logger.log_debug('Giving up on brightness slider');
+            if (attempt >= 20) {
+                this._logger.log_debug('Giving up on waiting for QuickSettings menu');
                 this._enableTimeoutId = null;
-                // TODO: Figure out how to disable the extension.
                 return GLib.SOURCE_REMOVE;
             }
 
             attempt += 1;
-            if (attempt >= 1) {
-                this._logger.log_debug('Brightness slider not ready, wait (attempt ' + attempt + ')');
-            }
             return GLib.SOURCE_CONTINUE;
         });
     }
 
     _enable() {
-        this._indicator = Main.panel.statusArea.quickSettings._brightness.quickSettingsItems[0];
-        this._slider = this._indicator.slider;
-
-        // Watch hardware brightness changes to sync overlay when in "control together" mode
-        if (this._slider) {
-            this._logger.log_debug('IndicatorManager: connecting to hardware brightness slider');
-            this._hardwareBrightnessChangedId = this._slider.connect('notify::value', () => {
-                const useBacklight = this._settings.get_boolean('use-backlight');
-                const hardwareValue = this._slider.value;
-                this._logger.log_debug(`IndicatorManager: hardware brightness changed to ${hardwareValue}, use-backlight=${useBacklight}`);
-
-                // Only sync when use-backlight is ON (control together mode)
-                if (useBacklight) {
-                    this._logger.log_debug(`IndicatorManager: syncing overlay to hardware brightness ${hardwareValue}`);
-                    this._settings.set_double('current-brightness', hardwareValue);
-                }
-            });
-            this._logger.log_debug(`IndicatorManager: hardware brightness watcher connected`);
-        } else {
-            this._logger.log_debug('IndicatorManager: WARNING - could not find hardware brightness slider to watch');
-        }
-
-        // Also add custom overlay brightness slider
-        this._addCustomSlider();
-    }
-
-    _addCustomSlider() {
-        this._logger.log_debug('IndicatorManager: adding custom overlay brightness slider');
-
-        // Create custom slider item
-        this._overlayBrightnessItem = new OverlayBrightnessItem(
-            this._logger,
-            this._settings
-        );
-
         const quickSettings = Main.panel.statusArea.quickSettings;
-        const brightnessItem = Main.panel.statusArea.quickSettings._brightness?.quickSettingsItems?.[0];
 
-        // Use addItem so the QS layout manager handles column-span correctly.
-        // This appends at the end of the panel initially.
-        if (quickSettings.menu.addItem) {
-            quickSettings.menu.addItem(this._overlayBrightnessItem, 2);
-            this._logger.log_debug('IndicatorManager: custom slider added via addItem');
-        } else {
-            // Fallback for environments where addItem is not available
-            quickSettings.menu._grid?.add_child(this._overlayBrightnessItem);
-            this._logger.log_debug('IndicatorManager: custom slider added via _grid.add_child');
-        }
-
-        // Move it directly after the hardware brightness slider.
-        // Use get_parent() to find the actual grid the brightness item lives in,
-        // then set_child_at_index() to place our item right after it.
-        const grid = brightnessItem?.get_parent();
-        if (grid && brightnessItem) {
-            try {
-                const nChildren = grid.get_n_children();
-                let brightnessIndex = -1;
-                for (let i = 0; i < nChildren; i++) {
-                    if (grid.get_child_at_index(i) === brightnessItem) {
-                        brightnessIndex = i;
-                        break;
+        // Check if native brightness slider exists (built-in laptop screen)
+        if (quickSettings._brightness?.quickSettingsItems) {
+            this._indicator = quickSettings._brightness.quickSettingsItems[0];
+            this._slider = this._indicator?.slider;
+            if (this._slider) {
+                this._hardwareBrightnessChangedId = this._slider.connect('notify::value', () => {
+                    const useBacklight = this._settings.get_boolean('use-backlight');
+                    if (useBacklight) {
+                        this._settings.set_double('current-brightness', this._slider.value);
                     }
-                }
-                if (brightnessIndex >= 0) {
-                    grid.set_child_at_index(this._overlayBrightnessItem, brightnessIndex + 1);
-                    this._logger.log_debug(`IndicatorManager: custom slider moved to index ${brightnessIndex + 1}`);
-                } else {
-                    this._logger.log_debug('IndicatorManager: could not find brightness item index, slider stays appended');
-                }
-            } catch (e) {
-                this._logger.log_debug(`IndicatorManager: could not reorder slider: ${e.message}`);
+                });
             }
         }
 
-        this._logger.log_debug('IndicatorManager: custom overlay brightness slider added');
+        // Settings to watch
+        const settingsToWatch = [
+            'changed::ddc-enabled',
+            'changed::software-dim-ratio',
+            'changed::sync-monitors',
+            'changed::use-backlight',
+        ];
+        this._settingsCallbacks = settingsToWatch.map(sig => {
+            const id = this._settings.connect(sig, () => this._refreshSliders());
+            return () => this._settings.disconnect(id);
+        });
+
+        // Monitor hotplug
+        this._monitorsChangedId = Main.layoutManager.connect('monitors-changed', () => {
+            this._logger.log_debug('IndicatorManager: monitors-changed');
+            this._refreshSliders();
+        });
+
+        this._refreshSliders();
+    }
+
+    async _refreshSliders() {
+        this._clearSliders();
+
+        const quickSettings = Main.panel.statusArea.quickSettings;
+        if (!quickSettings?.menu)
+            return;
+
+        const ddcEnabled = this._settings.get_boolean('ddc-enabled');
+        let ddcDisplays = [];
+        if (ddcEnabled && this._ddcController) {
+            ddcDisplays = await this._ddcController.detectDisplays();
+        }
+
+        const mutterMonitors = Main.layoutManager.monitors || [];
+        let displayConfigMonitors = [];
+        if (this._monitorManager?._displayConfigProxy) {
+            await new Promise(resolve => {
+                Utils.getMonitorConfig(this._monitorManager._displayConfigProxy, (result, _err) => {
+                    if (result) displayConfigMonitors = result;
+                    resolve();
+                });
+            });
+        }
+
+        const externalMonitors = [];
+        for (let i = 0; i < mutterMonitors.length; i++) {
+            const m = mutterMonitors[i];
+            const cfg = displayConfigMonitors[i];
+            const displayName = cfg ? cfg[0] : (m.name || `Display ${i + 1}`);
+            const connectorName = cfg ? cfg[1] : '';
+
+            const builtinMonitorName = this._settings.get_string('builtin-monitor');
+            const isBuiltin = (displayName === builtinMonitorName) ||
+                              connectorName.toLowerCase().startsWith('edp') ||
+                              connectorName.toLowerCase().startsWith('lvds');
+
+            // Internal laptop display with native backlight: let native GNOME slider handle it
+            if (isBuiltin && this._indicator) {
+                continue;
+            }
+
+            let matchedDdc = null;
+            if (ddcDisplays.length > 0) {
+                matchedDdc = ddcDisplays.find(d =>
+                    (connectorName && d.drmConnector && (connectorName.includes(d.drmConnector) || d.drmConnector.includes(connectorName))) ||
+                    (displayName && d.model && displayName.toLowerCase().includes(d.model.toLowerCase()))
+                );
+                if (!matchedDdc && ddcDisplays.length === 1 && mutterMonitors.length <= 2) {
+                    matchedDdc = ddcDisplays[0];
+                }
+            }
+
+            externalMonitors.push({
+                monitorIndex: i,
+                displayName: matchedDdc ? matchedDdc.name : displayName,
+                connectorName,
+                bus: matchedDdc ? matchedDdc.bus : null,
+                isBuiltin,
+            });
+        }
+
+        // If no monitors found (e.g. mock test or single display), ensure at least 1 slider
+        if (externalMonitors.length === 0 && !this._indicator) {
+            externalMonitors.push({
+                monitorIndex: 0,
+                displayName: _('Display Brightness'),
+                connectorName: '',
+                bus: null,
+                isBuiltin: false,
+            });
+        }
+
+        for (const monInfo of externalMonitors) {
+            const sliderItem = new MonitorBrightnessItem(
+                this._logger,
+                this._settings,
+                this._overlayManager,
+                this._ddcController,
+                monInfo,
+                (sender, value) => this._onSync(sender, value)
+            );
+
+            this._sliderItems.push(sliderItem);
+
+            if (quickSettings.menu.addItem) {
+                quickSettings.menu.addItem(sliderItem, 2);
+            } else if (quickSettings.menu._grid?.add_child) {
+                quickSettings.menu._grid.add_child(sliderItem);
+            }
+        }
+
+        // If native indicator exists, place custom sliders right after it
+        if (this._indicator && this._sliderItems.length > 0) {
+            const grid = this._indicator.get_parent ? this._indicator.get_parent() : null;
+            if (grid && typeof grid.get_n_children === 'function') {
+                try {
+                    const nChildren = grid.get_n_children();
+                    let bIndex = -1;
+                    for (let i = 0; i < nChildren; i++) {
+                        if (grid.get_child_at_index(i) === this._indicator) {
+                            bIndex = i;
+                            break;
+                        }
+                    }
+                    if (bIndex >= 0) {
+                        for (let j = 0; j < this._sliderItems.length; j++) {
+                            grid.set_child_at_index(this._sliderItems[j], bIndex + 1 + j);
+                        }
+                    }
+                } catch (e) {
+                    this._logger.log_debug(`Reordering slider items failed: ${e.message}`);
+                }
+            }
+        }
+    }
+
+    _onSync(sender, value) {
+        for (const item of this._sliderItems) {
+            if (item !== sender) {
+                item.setSliderValue(value, true);
+            }
+        }
+    }
+
+    _clearSliders() {
+        for (const item of this._sliderItems) {
+            item.destroy();
+        }
+        this._sliderItems = [];
+    }
+
+    getSliderForCurrentCursor() {
+        if (this._sliderItems.length === 0)
+            return null;
+
+        if (this._settings.get_boolean('sync-monitors'))
+            return this._sliderItems[0];
+
+        try {
+            const [x, y] = global.get_pointer();
+            const monitors = Main.layoutManager.monitors || [];
+            let currentMonitorIdx = global.display?.get_current_monitor() ?? 0;
+            for (let i = 0; i < monitors.length; i++) {
+                const m = monitors[i];
+                if (x >= m.x && x < m.x + m.width && y >= m.y && y < m.y + m.height) {
+                    currentMonitorIdx = i;
+                    break;
+                }
+            }
+            const match = this._sliderItems.find(item => item.monitorIndex === currentMonitorIdx);
+            return match || this._sliderItems[0];
+        } catch (e) {
+            return this._sliderItems[0];
+        }
     }
 
     disable() {
-        // If _enableTimeoutId is non-null, _enable() has not run yet,
-        // and will not run.
         if (this._enableTimeoutId !== null) {
             GLib.source_remove(this._enableTimeoutId);
             this._enableTimeoutId = null;
         }
 
-        // Cleanup custom slider
-        if (this._overlayBrightnessItem) {
-            this._overlayBrightnessItem.destroy();
-            this._overlayBrightnessItem = null;
+        if (this._monitorsChangedId) {
+            Main.layoutManager.disconnect(this._monitorsChangedId);
+            this._monitorsChangedId = null;
         }
 
-        // Cleanup hardware brightness watcher
-        if (this._hardwareBrightnessChangedId) {
-            if (this._slider) {
-                this._slider.disconnect(this._hardwareBrightnessChangedId);
-            }
+        if (this._settingsCallbacks) {
+            this._settingsCallbacks.forEach(fn => fn());
+            this._settingsCallbacks = [];
+        }
+
+        if (this._hardwareBrightnessChangedId && this._slider) {
+            this._slider.disconnect(this._hardwareBrightnessChangedId);
             this._hardwareBrightnessChangedId = null;
+        }
+
+        this._clearSliders();
+
+        if (this._ddcController) {
+            this._ddcController.destroy();
         }
 
         this._indicator = null;
@@ -1041,6 +1207,12 @@ class CursorManager {
 
     _updateMousePosition() {
         const [x, y] = global.get_pointer();
+        // Damage the current (old) paint volume before moving.  set_position
+        // should damage both positions, but on GNOME 51 the cursor clone sits
+        // above offscreen-redirected siblings and a missed old-position
+        // damage leaves a cursor trail; queue it explicitly (the clone is a
+        // small actor, so this is cheap).
+        this._cursorActor.queue_redraw();
         this._cursorActor.set_position(x, y);
         this._cursorSprite.content.dimFactor = this._overlayManager.brightnessAt(x, y);
         // Keep the clone above menus/dialogs that raised themselves (cheap
@@ -1072,7 +1244,23 @@ class CursorManager {
     }
 
     _updateMouseSprite() {
+        // Damage the old sprite area before the texture, size or hotspot
+        // translation changes.  The content invalidation only repaints the
+        // new area; without this the previous (possibly larger) cursor
+        // stays on screen, e.g. after switching from a 2x client cursor to
+        // a theme cursor.
+        this._cursorSprite.queue_redraw();
+
         const sprite = this._cursorTracker.get_sprite();
+        // In GS 51, Meta.CursorTracker.get_scale() exposes the sprite's
+        // texture scale.  For client cursor surfaces this is the exact
+        // texture-to-logical factor; theme cursors report 1.0 and fall
+        // back to the size heuristic in MouseSpriteContent.
+        const trackerScale = this._cursorTracker.get_scale !== undefined
+            ? this._cursorTracker.get_scale()
+            : 1;
+        this._cursorSprite.content.trackerScale = trackerScale;
+
         if (sprite) {
             this._cursorSprite.content.texture = sprite;
             this._cursorSprite.show();
@@ -1081,15 +1269,20 @@ class CursorManager {
         }
 
         // MouseSpriteContent normalizes the texture to the theme's cursor
-        // size (texture px ÷ guessed texture scale), so sprites at 1x and
-        // 2x render the same size.  The hotspot arrives in texture pixels
-        // and needs the same normalization.
+        // size (texture px ÷ sprite scale), so sprites at 1x and 2x render
+        // the same size.  The hotspot arrives in texture pixels and needs
+        // the same normalization.
         const scale = this._cursorSprite.content.spriteScale;
         const [xHot, yHot] = this._cursorTracker.get_hot();
         this._cursorSprite.set({
             translation_x: -xHot / scale,
             translation_y: -yHot / scale,
         });
+
+        this._logger.log_debug('_updateMouseSprite(): tex=' +
+            (sprite ? sprite.get_width() + 'x' + sprite.get_height() : 'none') +
+            ', trackerScale=' + trackerScale + ', spriteScale=' + scale +
+            ', hotspot=' + xHot + ',' + yHot);
     }
 
     _showSystemCursor() {
@@ -1147,6 +1340,7 @@ export class OverlayManager {
         this._currentBrightness = null;
         // Cache of the last-applied show() parameters, for redundancy skips
         this._lastShowSig = null;
+        this._lastMonitorSig = null;
         this._unredirectInhibited = false;
     }
 
@@ -1258,8 +1452,12 @@ export class OverlayManager {
     }
 
     _onChildAdded(child) {
-        if (this._currentBrightness !== null && this._isShaderTarget(child))
+        if (this._currentBrightness !== null && this._isShaderTarget(child)) {
             this._applyShaderToActor(child);
+            // A new offscreen-redirected actor can leave the area it
+            // covers stale until something forces a full repaint.
+            this._forceFullRedraw();
+        }
         // The pointer watch re-raises the clone group on motion, but a popup
         // opened via keyboard with the pointer stationary would cover the
         // clone until the mouse next moves — also re-raise when something
@@ -1275,6 +1473,9 @@ export class OverlayManager {
                 try { actor.disconnect(removed.destroyId); } catch (_e) {}
             }
             this._detachEffect(removed.actor, removed.effect);
+            // Removing an offscreen-redirected actor can leave its last
+            // frame on screen; repaint once to clear it.
+            this._forceFullRedraw();
         }
     }
 
@@ -1313,6 +1514,12 @@ export class OverlayManager {
         this._inhibitUnredirect(true);
 
         const targets = this._collectShaderTargets();
+        const targetsChanged =
+            this._shaderTargets.length !== targets.length ||
+            this._shaderTargets.some((t, i) => t.actor !== targets[i]);
+        const monitorSig = JSON.stringify(monitorRects);
+        const monitorsChanged = monitorSig !== this._lastMonitorSig;
+        this._lastMonitorSig = monitorSig;
 
         // Settings-change storms (e.g. prefs rewriting a key) re-invoke show()
         // with identical parameters many times per second; skip when nothing
@@ -1352,6 +1559,19 @@ export class OverlayManager {
             const destroyId = actor.connect('destroy', () => this._removeActorFromTargets(actor));
             return { actor, effect, destroyId };
         });
+
+        // Applying/removing a batch of offscreen effects, or moving the
+        // dimmed area to different monitors, changes what is painted and can
+        // leave stale regions behind (seen at login on GNOME 51).  One full
+        // repaint after such a change makes the frame consistent;
+        // brightness-only updates skip it.
+        if (targetsChanged || monitorsChanged)
+            this._forceFullRedraw();
+    }
+
+    _forceFullRedraw() {
+        if (global.stage)
+            global.stage.queue_redraw();
     }
 
     hide() {
@@ -1385,6 +1605,10 @@ export class OverlayManager {
         } else {
             global.compositor.enable_unredirect();
         }
+        // Switching between direct scanout and compositing can leave the
+        // previous scanout buffer on screen until something forces a full
+        // repaint (seen after login on GNOME 51).  Repaint once now.
+        this._forceFullRedraw();
     }
 
     hideForScreenshot() {

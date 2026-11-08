@@ -7,7 +7,7 @@ BUILD_DIR   := build
 ZIP_NAME    := $(UUID).v$(VERSION).shell-extension.zip
 
 # Source lists
-JS_SOURCES := src/cursor.js src/extension.js src/logger.js src/prefs.js src/utils.js
+JS_SOURCES := src/cursor.js src/extension.js src/logger.js src/prefs.js src/utils.js src/ddcutil.js src/slider.js
 SCHEMA_XML := schemas/org.gnome.shell.extensions.brightness-slider.gschema.xml
 DBUS_XML   := dbus-interfaces/org.gnome.Mutter.DisplayConfig.xml
 

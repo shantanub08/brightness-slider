@@ -9,6 +9,9 @@ class BackgroundGroup extends Clutter.Actor {}
 export default {
     WindowGroup,
     BackgroundGroup,
+    prefs_get_cursor_size() {
+        return 48;
+    },
     // Leave CursorTracker.get_for_display defined (GS < 48 path)
     CursorTracker: {
         get_for_display(_display) {
@@ -17,6 +20,7 @@ export default {
                 disconnect(id) {},
                 get_sprite() { return null; },
                 get_hot() { return [0, 0]; },
+                get_scale() { return 1; },
                 inhibit_cursor_visibility() {},
                 uninhibit_cursor_visibility() {},
             };

@@ -65,5 +65,21 @@
       <summary>Debugging.</summary>
       <description>Enable debugging for the extension.</description>
     </key>
+    <key name="ddc-enabled" type="b">
+      <default>true</default>
+      <summary>Enable DDC/CI monitor control.</summary>
+      <description>Control external desktop monitor brightness and contrast via DDC/CI.</description>
+    </key>
+    <key name="software-dim-ratio" type="d">
+      <range min="0.05" max="0.5"/>
+      <default>0.25</default>
+      <summary>Software dimming slider space ratio.</summary>
+      <description>Portion of the slider allocated to software dimming when hardware brightness is at 0.</description>
+    </key>
+    <key name="sync-monitors" type="b">
+      <default>false</default>
+      <summary>Sync all monitors.</summary>
+      <description>Synchronize brightness and contrast across all monitors.</description>
+    </key>
   </schema>
 </schemalist>

@@ -237,6 +237,27 @@ describe('OverlayManager.show(): shader target selection', () => {
         assert.deepEqual(effect._uniforms.u_brightness.values, [0.7]);
     });
 
+    test('full repaint when the target set changes, not on brightness-only updates', () => {
+        const bg = new Actor();
+        global.stage.add_child(bg);
+        const { om } = makeOverlay();
+        global.stage._redraws = 0;
+
+        om.show(0.5);
+        const afterFirst = global.stage._redraws;
+        assert.ok(afterFirst > 0, 'first show forces a full repaint');
+
+        om.show(0.7);
+        assert.equal(global.stage._redraws, afterFirst,
+            'brightness-only update must not force a full repaint');
+
+        const late = new Actor();
+        global.stage.add_child(late);
+        om.show(0.7);
+        assert.ok(global.stage._redraws > afterFirst,
+            'new shader target forces a full repaint');
+    });
+
     test('show() re-enables effects disabled by hideForScreenshot()', () => {
         const bg = new Actor();
         global.stage.add_child(bg);

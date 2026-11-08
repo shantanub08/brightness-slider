@@ -48,6 +48,9 @@ const EXPECTED_KEYS = {
     'debug': 'b',
     'brightness-up': 'as',
     'brightness-down': 'as',
+    'ddc-enabled': 'b',
+    'software-dim-ratio': 'd',
+    'sync-monitors': 'b',
 };
 
 let allPassed = true;

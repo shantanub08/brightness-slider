@@ -5,6 +5,9 @@ import assert from 'node:assert/strict';
 // When the same Cogl texture object is set again, the early-return skips
 // invalidate(), so the rendered content never updates.
 
+import Meta from './mocks/meta.mjs';
+import { MouseSpriteContent } from '../src/cursor.js';
+
 // ── Reproduce the bug with a minimal Content implementation ──
 
 class MouseSpriteContent_BUGGY {
@@ -120,5 +123,89 @@ describe('cursor.js – MouseSpriteContent texture freeze (issue #52)', () => {
 
         content.texture = large; // same size, same ref
         assert.equal(content.invalidateSizeCalls, 2); // no size change
+    });
+});
+
+// ── MouseSpriteContent scale normalization ──────────────────────────────────
+
+function makeCoglTexture(width, height) {
+    return {
+        get_width: () => width,
+        get_height: () => height,
+    };
+}
+
+function makeContent() {
+    const content = new MouseSpriteContent();
+    content.invalidates = 0;
+    content.invalidatesSize = 0;
+    content.invalidate = () => content.invalidates++;
+    content.invalidate_size = () => content.invalidatesSize++;
+    return content;
+}
+
+describe('cursor.js – sprite scale (theme vs client cursors)', () => {
+    test('theme cursor at 2x: texture is divided by the guessed scale', () => {
+        const content = makeContent();
+        content.trackerScale = 1;
+        content.texture = makeCoglTexture(96, 96);
+
+        assert.equal(content.spriteScale, 2);
+        assert.deepEqual(content.vfunc_get_preferred_size(), [true, 48, 48]);
+    });
+
+    test('theme cursor at 1x: texture is used as-is', () => {
+        const content = makeContent();
+        content.trackerScale = 1;
+        content.texture = makeCoglTexture(48, 48);
+
+        assert.equal(content.spriteScale, 1);
+        assert.deepEqual(content.vfunc_get_preferred_size(), [true, 48, 48]);
+    });
+
+    test('client cursor at 2x: get_scale() is authoritative', () => {
+        const content = makeContent();
+        content.trackerScale = 0.5;
+        content.texture = makeCoglTexture(64, 64);
+
+        assert.equal(content.spriteScale, 2);
+        assert.deepEqual(content.vfunc_get_preferred_size(), [true, 32, 32]);
+    });
+
+    test('client cursor at 1x: get_scale() 1 keeps the texture size', () => {
+        const content = makeContent();
+        content.trackerScale = 1;
+        content.texture = makeCoglTexture(32, 32);
+
+        assert.equal(content.spriteScale, 1);
+        assert.deepEqual(content.vfunc_get_preferred_size(), [true, 32, 32]);
+    });
+
+    test('same-size texture with a new tracker scale is recomputed', () => {
+        const content = makeContent();
+        const texture = makeCoglTexture(64, 64);
+        content.texture = texture;
+        assert.equal(content.spriteScale, 1);
+        assert.equal(content.invalidatesSize, 1);
+
+        content.trackerScale = 0.5;
+        assert.equal(content.spriteScale, 2);
+        assert.equal(content.invalidatesSize, 2);
+        assert.deepEqual(content.vfunc_get_preferred_size(), [true, 32, 32]);
+    });
+
+    test('invalid cursor size does not produce Infinity/NaN', () => {
+        const saved = Meta.prefs_get_cursor_size;
+        Meta.prefs_get_cursor_size = () => 0;
+        try {
+            const content = makeContent();
+            content.trackerScale = 1;
+            content.texture = makeCoglTexture(96, 96);
+
+            assert.equal(content.spriteScale, 1);
+            assert.deepEqual(content.vfunc_get_preferred_size(), [true, 96, 96]);
+        } finally {
+            Meta.prefs_get_cursor_size = saved;
+        }
     });
 });

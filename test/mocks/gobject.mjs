@@ -21,5 +21,6 @@ export default {
     },
     Object: class GObject {
         constructor() {}
+        _init() {}
     },
 };
