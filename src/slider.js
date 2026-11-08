@@ -7,8 +7,26 @@
 // (at your option) any later version.
 
 import Clutter from 'gi://Clutter';
+import Cogl from 'gi://Cogl';
 import GObject from 'gi://GObject';
 import { Slider } from 'resource:///org/gnome/shell/ui/slider.js';
+
+// In GS 47, Clutter.Color was replaced by Cogl.Color.  Construct colors
+// through this helper so the slider keeps working on GS 45–51.
+function makeColor(red, green, blue, alpha) {
+    return Clutter.Color !== undefined
+        ? new Clutter.Color({ red, green, blue, alpha })
+        : new Cogl.Color({ red, green, blue, alpha });
+}
+
+function withAlpha(color, alpha) {
+    return makeColor(color.red, color.green, color.blue, alpha);
+}
+
+// Software dimming uses the accent color at reduced opacity; the notch
+// uses the theme foreground color, so both adapt to light and dark themes.
+const SOFTWARE_ZONE_ALPHA = 115;
+const NOTCH_ALPHA = 128;
 
 /**
  * Maps a single slider value [0.0, 1.0] to hardware brightness & contrast [0, 100]
@@ -123,7 +141,7 @@ class DualZoneSlider extends Slider {
         cr.setSourceColor(this._barLevelColor);
         cr.fill();
 
-        // 2. Software dimming zone (darker fill color)
+        // 2. Software dimming zone (accent tint)
         // Filled up to min(endX, splitX) when value > 0
         if (this._value > 0) {
             let softFillEnd = rtl ? Math.max(endX, splitX) : Math.min(endX, splitX);
@@ -136,9 +154,8 @@ class DualZoneSlider extends Slider {
             cr.lineTo(softFillEnd, (height + this._barLevelHeight) / 2);
             cr.lineTo(xcArcStart, (height + this._barLevelHeight) / 2);
 
-            // Darker fill for software darkening zone (deep slate/indigo tone)
-            const darkFill = new Clutter.Color({ red: 48, green: 58, blue: 74, alpha: 240 });
-            cr.setSourceColor(darkFill);
+            // Accent fill at reduced opacity for the software dimming zone
+            cr.setSourceColor(withAlpha(this._barLevelActiveColor, SOFTWARE_ZONE_ALPHA));
             cr.fill();
         }
 
@@ -158,12 +175,10 @@ class DualZoneSlider extends Slider {
 
         // 4. End progress cap
         if (this._value > 0) {
-            if (this._value <= this._splitRatio) {
-                const darkFill = new Clutter.Color({ red: 48, green: 58, blue: 74, alpha: 240 });
-                cr.setSourceColor(darkFill);
-            } else {
+            if (this._value <= this._splitRatio)
+                cr.setSourceColor(withAlpha(this._barLevelActiveColor, SOFTWARE_ZONE_ALPHA));
+            else
                 cr.setSourceColor(this._barLevelActiveColor);
-            }
             if (!rtl) {
                 cr.arc(endX, height / 2, barLevelBorderRadius, TAU * (3 / 4), TAU * (1 / 4));
                 cr.lineTo(Math.floor(endX), (height + this._barLevelHeight) / 2);
@@ -180,8 +195,7 @@ class DualZoneSlider extends Slider {
         // 5. Distinct divider notch at splitRatio boundary
         const notchWidth = 2.0;
         cr.rectangle(splitX - notchWidth / 2, (height - this._barLevelHeight) / 2, notchWidth, this._barLevelHeight);
-        const notchColor = new Clutter.Color({ red: 200, green: 200, blue: 200, alpha: 180 });
-        cr.setSourceColor(notchColor);
+        cr.setSourceColor(withAlpha(fgColor, NOTCH_ALPHA));
         cr.fill();
 
         // 6. Handle knob
