@@ -28,6 +28,13 @@ export function makeSettings(overrides = {}) {
         'use-backlight': false,
         'prevent-unredirect': 'when-correcting',
         'clone-mouse': false,
+        'shortcut-step-software': 0.05,
+        'shortcut-step-hardware': 0.05,
+        'ddc-enabled': true,
+        'software-dim-ratio': 0.25,
+        'sync-monitors': false,
+        'brightness-up': ['<Shift>XF86MonBrightnessUp'],
+        'brightness-down': ['<Shift>XF86MonBrightnessDown'],
         ...overrides,
     };
     const listeners = new Map();

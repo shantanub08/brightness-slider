@@ -80,6 +80,73 @@ export function hardwareAndSoftwareToSlider(hardwarePercent = 0, softwareDim = 1
     }
 }
 
+/**
+ * Maps an externally observed hardware brightness to thumb state.
+ *
+ * Brightness alone decides the position.  With hardware above zero the
+ * software dimming layer cannot be represented alongside it, so any stored
+ * dimming is reported as `clearSoftwareDim`.  At hardware zero the stored
+ * software dimming keeps its place in the lower zone.
+ */
+export function externalHardwareToSlider(hardwarePercent, storedSoftwareDim = 1.0,
+    splitRatio = 0.25, minBrightness = 0.1) {
+    const hw = Math.max(0, Math.min(100, Math.round(hardwarePercent)));
+    const dim = Math.max(0.0, Math.min(1.0, storedSoftwareDim));
+
+    if (hw > 0) {
+        return {
+            sliderValue: hardwareAndSoftwareToSlider(hw, 1.0, splitRatio, minBrightness),
+            softwareDim: 1.0,
+            clearSoftwareDim: dim < 0.999,
+        };
+    }
+
+    return {
+        sliderValue: hardwareAndSoftwareToSlider(0, dim, splitRatio, minBrightness),
+        softwareDim: dim,
+        clearSoftwareDim: false,
+    };
+}
+
+/**
+ * Steps a dual-zone slider value within its current zone.
+ *
+ * The hardware zone [splitRatio, 1.0] and the software zone
+ * [0.0, splitRatio] are each treated as 100 integer percent, so `step`
+ * is applied to the span of the zone actually being changed.  At the
+ * split itself the direction decides the zone: increasing enters the
+ * hardware zone, decreasing enters the software zone.
+ *
+ * `step` may be a single fraction or an object with separate
+ * `{software, hardware}` fractions, so the two zones can be tuned
+ * independently.
+ *
+ * Returns a new slider value in [0.0, 1.0].
+ */
+export function stepSliderValue(value, direction, splitRatio = 0.25, step = 0.05) {
+    const s = Math.max(0.01, Math.min(0.9, splitRatio));
+    const v = Math.max(0.0, Math.min(1.0, value));
+    const steps = typeof step === 'number'
+        ? { software: step, hardware: step }
+        : { software: step?.software ?? 0.05, hardware: step?.hardware ?? 0.05 };
+    const epsilon = 1e-9;
+    const isHardwareZone = v > s + epsilon ||
+        (Math.abs(v - s) <= epsilon && direction > 0);
+    const stepFraction = isHardwareZone ? steps.hardware : steps.software;
+    const percentStep = Math.max(1, Math.min(20, Math.round(stepFraction * 100)));
+    const delta = direction < 0 ? -percentStep : percentStep;
+
+    if (isHardwareZone) {
+        const hardwarePercent = Math.round(((v - s) / (1.0 - s)) * 100);
+        const nextPercent = Math.max(0, Math.min(100, hardwarePercent + delta));
+        return s + (nextPercent / 100.0) * (1.0 - s);
+    }
+
+    const softwarePercent = Math.round((v / s) * 100);
+    const nextPercent = Math.max(0, Math.min(100, softwarePercent + delta));
+    return (nextPercent / 100.0) * s;
+}
+
 export const DualZoneSlider = GObject.registerClass(
 class DualZoneSlider extends Slider {
     _init(value = 0, splitRatio = 0.25) {

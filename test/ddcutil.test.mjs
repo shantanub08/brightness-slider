@@ -117,5 +117,32 @@ describe('ddcutil.js – DdcController queueing & debouncing', () => {
 
         controller.destroy();
     });
+
+    test('isBusBusy tracks queued, in-flight and settling writes', async () => {
+        const controller = new DdcController();
+        let resolveExec;
+        controller._execAsync = () => new Promise(resolve => {
+            resolveExec = resolve;
+        });
+
+        controller.setBrightnessAndContrast(5, 20, 20);
+        const queue = controller._busQueues.get(5);
+
+        assert.equal(controller.isBusBusy(5), true, 'debounce timer is pending');
+        assert.equal(controller.isBusBusy(6), false, 'unused bus is idle');
+
+        GLib._firePendingTimeout(queue.timerId);
+        assert.equal(controller.isBusBusy(5), true, 'write is in flight');
+
+        resolveExec('');
+        await new Promise(r => setImmediate(r));
+
+        assert.equal(controller.isBusBusy(5), false, 'write finished');
+        assert.equal(controller.isBusBusy(5, 400), true,
+            'settle window still suppresses reads');
+        assert.equal(queue.lastSent.brightness, 20);
+
+        controller.destroy();
+    });
 });
 

@@ -51,14 +51,30 @@
     <key name="brightness-up" type="as">
       <default>['&lt;Shift&gt;XF86MonBrightnessUp']</default>
       <summary>Keyboard shortcut: increase brightness.</summary>
-      <description>Keyboard shortcut to increase the brightness by one step (5%).
+      <description>Keyboard shortcut to increase the brightness by one step.
       Set to an empty list to disable.</description>
     </key>
     <key name="brightness-down" type="as">
       <default>['&lt;Shift&gt;XF86MonBrightnessDown']</default>
       <summary>Keyboard shortcut: decrease brightness.</summary>
-      <description>Keyboard shortcut to decrease the brightness by one step (5%).
+      <description>Keyboard shortcut to decrease the brightness by one step.
       Set to an empty list to disable.</description>
+    </key>
+    <key name="shortcut-step-software" type="d">
+      <range min="0.01" max="0.20"/>
+      <default>0.05</default>
+      <summary>Keyboard shortcut step for software dimming.</summary>
+      <description>How far each brightness shortcut press moves within the
+      software dimming zone, as a fraction of that zone. The default 0.05 moves
+      5% of the software dimming range.</description>
+    </key>
+    <key name="shortcut-step-hardware" type="d">
+      <range min="0.01" max="0.20"/>
+      <default>0.05</default>
+      <summary>Keyboard shortcut step for hardware brightness.</summary>
+      <description>How far each brightness shortcut press moves within the
+      hardware brightness zone, as a fraction of that zone. The default 0.05
+      moves 5% of the hardware brightness range.</description>
     </key>
     <key name="debug" type="b">
       <default>false</default>

@@ -28,7 +28,11 @@ Bonus features:
 
 - Optional mouse cursor dimming.
 
-- Keyboard shortcuts for brightness control.
+- Keyboard shortcuts for brightness control, with a shortcut recorder and
+  configurable software and hardware step sizes.
+
+- DDC/CI hardware control for external monitors, with the slider thumb
+  staying in sync with changes made outside the extension.
 
 - Disables itself temporarily when a screenshot is taken.
 
@@ -100,11 +104,33 @@ display from sleeping, because the software cursor loop keeps the screen
 active. Disable it if you encounter cursor issues or if your computer
 stops sleeping.
 
+#### _Desktop & external displays (DDC/CI)_
+
+When `ddcutil` is installed and the monitor supports DDC/CI, each external
+monitor gets a dual-zone slider in the quick settings menu. The upper part
+of the slider controls the monitor's hardware brightness and contrast
+together; once hardware brightness reaches 0%, the lower part continues
+into software dimming.
+
+While the quick settings menu is open, the slider periodically re-reads
+the monitor, so changes made with the monitor's own OSD or another
+`ddcutil` call are reflected in the thumb. The thumb is re-read once more
+after a brightness shortcut. External changes update only the affected
+monitor; _Synchronize all monitors_ applies to changes made from the
+extension.
+
 #### _Keyboard shortcuts_
 
-The default shortcuts use Shift plus the hardware brightness keys and
-adjust the overlay brightness in 5% steps. Clear a shortcut to disable
-it, or set a custom binding with `gsettings`.
+The default shortcuts use Shift plus the hardware brightness keys. Click
+_Set…_ next to a shortcut and press a key combination to rebind it, or
+_Clear_ to disable it. Bare media keys and function keys can be used
+without a modifier; other keys require one.
+
+_Software step size_ and _Hardware step size_ set how far each press
+moves within each slider zone. The default 5% changes hardware brightness
+by 5 points, or 5% of the software dimming range. Tune them separately if
+the two zones feel uneven. Pressing decrease at the lowest hardware
+brightness continues seamlessly into software dimming.
 
 #### _Debug_
 

@@ -23,6 +23,10 @@ export default {
         return null;
     },
 
+    get_monotonic_time() {
+        return Date.now() * 1000;
+    },
+
     // Test helper: fire a pending timeout by id
     _firePendingTimeout(id) {
         const t = _timeouts.get(id);

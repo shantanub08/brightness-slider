@@ -1,5 +1,21 @@
 # Changelog
 
+### Unreleased
+
+- Keep the DDC/CI slider thumb in sync when monitor brightness is
+  changed outside the extension (monitor OSD buttons or another
+  `ddcutil` call): read on Quick Settings open, every 5 seconds while
+  it stays open, and once after a brightness shortcut. Brightness
+  (VCP 10) drives the thumb; an external hardware increase cancels
+  software dimming, and software dimming keeps its position while
+  hardware is at 0%.
+- Add a keyboard shortcut recorder to preferences, so bare media keys
+  (for example the hardware brightness keys) can be bound without
+  `gsettings`, while other keys require a modifier.
+- Add separate configurable shortcut steps for software dimming and
+  hardware brightness (1–20%, default 5% each), so each slider zone can
+  be tuned to feel right.
+
 ### Version 1
 #### November 8, 2026
 

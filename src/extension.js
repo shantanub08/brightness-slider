@@ -34,7 +34,13 @@ import * as Logger from './logger.js';
 import * as Utils from './utils.js';
 import { MouseSpriteContent } from './cursor.js';
 import { DdcController } from './ddcutil.js';
-import { DualZoneSlider, sliderToHardwareAndSoftware, hardwareAndSoftwareToSlider } from './slider.js';
+import {
+    DualZoneSlider,
+    sliderToHardwareAndSoftware,
+    hardwareAndSoftwareToSlider,
+    externalHardwareToSlider,
+    stepSliderValue,
+} from './slider.js';
 
 // In GS 51, ui/pointerWatcher.js was removed; see CursorTrackerPointerWatcher.
 const PointerWatcher = parseInt(Config.PACKAGE_VERSION) < 51
@@ -345,15 +351,14 @@ export default class BrightnessSliderExtension extends Extension {
     }
 
     _enableKeyboardShortcuts() {
-        const step = 0.05;
         Main.wm.addKeybinding('brightness-up', this._settings,
             Meta.KeyBindingFlags.NONE,
             Shell.ActionMode.NORMAL | Shell.ActionMode.OVERVIEW,
-            () => this._adjustBrightness(+step));
+            () => this._adjustBrightness(+1));
         Main.wm.addKeybinding('brightness-down', this._settings,
             Meta.KeyBindingFlags.NONE,
             Shell.ActionMode.NORMAL | Shell.ActionMode.OVERVIEW,
-            () => this._adjustBrightness(-step));
+            () => this._adjustBrightness(-1));
     }
 
     _disableKeyboardShortcuts() {
@@ -361,19 +366,31 @@ export default class BrightnessSliderExtension extends Extension {
         Main.wm.removeKeybinding('brightness-down');
     }
 
-    _adjustBrightness(delta) {
+    _adjustBrightness(direction) {
+        // Without a Quick Settings slider the stored level is the hardware
+        // backlight, or the software dimming factor when backlight is off.
+        const stepKey = this._settings.get_boolean('use-backlight')
+            ? 'shortcut-step-hardware'
+            : 'shortcut-step-software';
+        const step = Math.round(Math.max(0.01, Math.min(0.20,
+            this._settings.get_double(stepKey))) * 100) / 100;
         const targetSlider = this._indicatorManager?.getSliderForCurrentCursor();
         if (targetSlider) {
-            targetSlider.stepDelta(delta);
+            targetSlider.stepDelta(direction);
+            // Refresh the thumb once the DDC write queue has drained, so an
+            // external change that happened while the menu was closed does
+            // not leave the slider stale.
+            this._indicatorManager.refreshAfterUserAction();
             return;
         }
 
         const minBrightness = this._settings.get_double('min-brightness');
         const current = this._getBrightnessLevel();
-        // Round to nearest step to avoid floating-point drift
-        const stepped = Math.round((current + delta) / 0.05) * 0.05;
+        // Keep the configured step even when the starting level is not on
+        // that grid (e.g. a native backlight value); only strip float dust.
+        const stepped = Math.round((current + direction * step) * 1e6) / 1e6;
         const clamped = Math.max(minBrightness, Math.min(1.0, stepped));
-        this._logger.log_debug(`_adjustBrightness(${delta}): ${current} -> ${clamped}`);
+        this._logger.log_debug(`_adjustBrightness(${direction}): ${current} -> ${clamped}`);
         this._storeBrightnessLevel(clamped);
     }
 
@@ -558,6 +575,7 @@ class MonitorBrightnessItem extends QuickSlider {
         this._ddcController = ddcController;
         this._monitorInfo = monitorInfo || { displayName: _('Display'), connectorName: '', bus: null, monitorIndex: 0 };
         this._onSyncCallback = onSyncCallback;
+        this._destroyed = false;
 
         this.menuEnabled = false;
 
@@ -611,23 +629,57 @@ class MonitorBrightnessItem extends QuickSlider {
 
         if (ddcEnabled && this._monitorInfo?.bus !== null && this._ddcController) {
             const values = await this._ddcController.getBrightnessAndContrast(this._monitorInfo.bus);
+            if (this._destroyed)
+                return;
             if (values && values.brightness !== null) {
-                const sliderVal = hardwareAndSoftwareToSlider(values.brightness, 1.0, splitRatio, minBrightness);
-                this.setSliderValue(sliderVal, false);
-                this._updateIcon();
+                this.applyExternalBrightness(values.brightness);
                 return;
             }
         }
 
+        if (this._destroyed)
+            return;
         const currentBrightness = this._settings.get_double('current-brightness');
         const initialVal = hardwareAndSoftwareToSlider(100, currentBrightness, splitRatio, minBrightness);
         this.setSliderValue(initialVal, false);
         this._updateIcon();
     }
 
+    /**
+     * Reconciles the slider with a hardware brightness read from outside the
+     * extension (monitor OSD, another ddcutil call, or the initial read).
+     *
+     * Brightness (VCP 10) is the only source of thumb position; contrast is
+     * re-coupled by the next extension-initiated move.  While hardware is at
+     * 0%, stored software dimming keeps its position in the lower zone.
+     */
+    applyExternalBrightness(hardwareBrightness) {
+        if (this._destroyed || hardwareBrightness === null || hardwareBrightness === undefined)
+            return;
+
+        const state = externalHardwareToSlider(
+            hardwareBrightness,
+            this._settings.get_double('current-brightness'),
+            this._dualSlider.splitRatio,
+            this._settings.get_double('min-brightness'));
+
+        // An external source raised the hardware brightness.  Software
+        // dimming can no longer be represented alongside a non-zero hardware
+        // level, so adopt the external state.
+        if (state.clearSoftwareDim) {
+            this._settings.set_double('current-brightness', 1.0);
+            if (this._overlayManager)
+                this._overlayManager.hide();
+        }
+
+        this.setSliderValue(state.sliderValue, false);
+    }
+
     setSliderValue(val, triggerChange = true) {
+        if (this._destroyed)
+            return;
         const clamped = Math.max(0.0, Math.min(1.0, val));
-        if (Math.abs(this.slider.value - clamped) < 0.001)
+        if (Math.abs(this.slider.value - clamped) < 1e-6)
             return;
 
         if (!triggerChange)
@@ -639,9 +691,13 @@ class MonitorBrightnessItem extends QuickSlider {
         this._updateIcon();
     }
 
-    stepDelta(delta) {
-        const stepped = Math.round((this.slider.value + delta) / 0.05) * 0.05;
-        this.setSliderValue(stepped, true);
+    stepDelta(direction) {
+        const next = stepSliderValue(
+            this.slider.value, direction, this._dualSlider.splitRatio, {
+                software: this._settings.get_double('shortcut-step-software'),
+                hardware: this._settings.get_double('shortcut-step-hardware'),
+            });
+        this.setSliderValue(next, true);
     }
 
     _updateIcon() {
@@ -686,6 +742,7 @@ class MonitorBrightnessItem extends QuickSlider {
     }
 
     destroy() {
+        this._destroyed = true;
         if (this._sliderChangedId) {
             this.slider.disconnect(this._sliderChangedId);
             this._sliderChangedId = null;
@@ -722,6 +779,14 @@ export class IndicatorManager {
         this._hardwareBrightnessChangedId = null;
         this._monitorsChangedId = null;
         this._settingsCallbacks = [];
+
+        this._disabled = false;
+        this._generation = 0;
+        this._menu = null;
+        this._menuOpenStateId = null;
+        this._pollTimerId = 0;
+        this._pollInFlight = false;
+        this._refreshAfterActionId = 0;
     }
 
     getProxy() {
@@ -729,6 +794,7 @@ export class IndicatorManager {
     }
 
     enable() {
+        this._disabled = false;
         let attempt = 0;
         this._enableTimeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 100, () => {
             const quickSettings = Main.panel.statusArea.quickSettings;
@@ -785,10 +851,25 @@ export class IndicatorManager {
             this._refreshSliders();
         });
 
+        // Refresh DDC values when the Quick Settings menu becomes visible:
+        // once immediately, then periodically while it stays open.
+        this._menu = quickSettings.menu;
+        if (this._menu?.connect) {
+            this._menuOpenStateId = this._menu.connect('open-state-changed', (_menu, isOpen) => {
+                this._onMenuOpenChanged(isOpen);
+            });
+            if (this._menu.isOpen)
+                this._onMenuOpenChanged(true);
+        }
+
         this._refreshSliders();
     }
 
     async _refreshSliders() {
+        if (this._disabled)
+            return;
+
+        const generation = ++this._generation;
         this._clearSliders();
 
         const quickSettings = Main.panel.statusArea.quickSettings;
@@ -799,6 +880,8 @@ export class IndicatorManager {
         let ddcDisplays = [];
         if (ddcEnabled && this._ddcController) {
             ddcDisplays = await this._ddcController.detectDisplays();
+            if (this._disabled || generation !== this._generation)
+                return;
         }
 
         const mutterMonitors = Main.layoutManager.monitors || [];
@@ -810,6 +893,8 @@ export class IndicatorManager {
                     resolve();
                 });
             });
+            if (this._disabled || generation !== this._generation)
+                return;
         }
 
         const externalMonitors = [];
@@ -902,6 +987,111 @@ export class IndicatorManager {
                 }
             }
         }
+
+        // Sliders can be rebuilt while the menu is already open (hotplug,
+        // settings change); make sure the periodic refresh covers them.
+        if (this._menu?.isOpen)
+            this._onMenuOpenChanged(true);
+    }
+
+    // Polling lifecycle: DDC/CI has no change notifications, so values are
+    // sampled on menu open, every 5s while the menu stays open, and once
+    // after a shortcut press (see refreshAfterUserAction()).
+    _onMenuOpenChanged(isOpen) {
+        if (this._disabled)
+            return;
+        if (!isOpen) {
+            this._stopPolling();
+            return;
+        }
+
+        this._refreshFromHardware();
+
+        if (this._pollTimerId === 0 &&
+            this._sliderItems.some(item => item.bus !== null)) {
+            this._pollTimerId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 5000, () => {
+                this._refreshFromHardware();
+                return GLib.SOURCE_CONTINUE;
+            });
+        }
+    }
+
+    _stopPolling() {
+        if (this._pollTimerId) {
+            GLib.source_remove(this._pollTimerId);
+            this._pollTimerId = 0;
+        }
+    }
+
+    /**
+     * Schedules a one-shot refresh after a shortcut press.  Waits for the
+     * coalescing DDC write queue to drain and the monitor to settle, so the
+     * read cannot observe an intermediate value and bounce the thumb.
+     */
+    refreshAfterUserAction() {
+        if (this._disabled)
+            return;
+        if (!this._sliderItems.some(item => item.bus !== null))
+            return;
+
+        if (this._refreshAfterActionId) {
+            GLib.source_remove(this._refreshAfterActionId);
+            this._refreshAfterActionId = 0;
+        }
+        this._scheduleRefreshAfterAction(1200);
+    }
+
+    _scheduleRefreshAfterAction(delayMs) {
+        this._refreshAfterActionId = GLib.timeout_add(
+            GLib.PRIORITY_DEFAULT, delayMs, () => {
+                this._refreshAfterActionId = 0;
+                if (this._disabled)
+                    return GLib.SOURCE_REMOVE;
+
+                const busy = this._sliderItems.some(item =>
+                    item.bus !== null && this._ddcController.isBusBusy(item.bus, 400));
+                if (busy) {
+                    this._scheduleRefreshAfterAction(400);
+                    return GLib.SOURCE_REMOVE;
+                }
+
+                this._refreshFromHardware();
+                return GLib.SOURCE_REMOVE;
+            });
+    }
+
+    async _refreshFromHardware() {
+        if (this._disabled || this._pollInFlight)
+            return;
+
+        const generation = this._generation;
+        const items = this._sliderItems.filter(item => item.bus !== null);
+        if (items.length === 0)
+            return;
+
+        this._pollInFlight = true;
+        try {
+            await Promise.allSettled(items.map(async item => {
+                if (this._ddcController.isBusBusy(item.bus, 400))
+                    return;
+
+                const values = await this._ddcController.getBrightnessAndContrast(item.bus);
+                if (this._disabled || generation !== this._generation ||
+                    !this._sliderItems.includes(item))
+                    return;
+
+                // A shortcut press during the read makes the sample stale;
+                // let that press's own refresh win.
+                if (this._ddcController.isBusBusy(item.bus, 400))
+                    return;
+
+                // Brightness (VCP 10) alone drives the thumb.
+                if (values && values.brightness !== null)
+                    item.applyExternalBrightness(values.brightness);
+            }));
+        } finally {
+            this._pollInFlight = false;
+        }
     }
 
     _onSync(sender, value) {
@@ -945,10 +1135,26 @@ export class IndicatorManager {
     }
 
     disable() {
+        this._disabled = true;
+        this._generation++;
+
         if (this._enableTimeoutId !== null) {
             GLib.source_remove(this._enableTimeoutId);
             this._enableTimeoutId = null;
         }
+
+        this._stopPolling();
+
+        if (this._refreshAfterActionId) {
+            GLib.source_remove(this._refreshAfterActionId);
+            this._refreshAfterActionId = 0;
+        }
+
+        if (this._menu && this._menuOpenStateId) {
+            this._menu.disconnect(this._menuOpenStateId);
+            this._menuOpenStateId = null;
+        }
+        this._menu = null;
 
         if (this._monitorsChangedId) {
             Main.layoutManager.disconnect(this._monitorsChangedId);

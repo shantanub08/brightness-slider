@@ -200,6 +200,7 @@ export class DdcController {
                 inFlight: false,
                 timerId: 0,
                 lastSent: null,
+                lastWriteTime: 0,
             };
             this._busQueues.set(bus, queue);
         }
@@ -214,6 +215,25 @@ export class DdcController {
                 return GLib.SOURCE_REMOVE;
             });
         }
+    }
+
+    /**
+     * Whether a bus has a queued or in-flight write, or was written within
+     * `settleMs`.  Readers use this to avoid sampling a value the monitor is
+     * still applying.
+     */
+    isBusBusy(bus, settleMs = 0) {
+        const queue = this._busQueues.get(bus);
+        if (!queue)
+            return false;
+        if (queue.inFlight || queue.timerId)
+            return true;
+        if (settleMs > 0 && queue.lastWriteTime) {
+            const elapsedUs = GLib.get_monotonic_time() - queue.lastWriteTime;
+            if (elapsedUs < settleMs * 1000)
+                return true;
+        }
+        return false;
     }
 
     async _processQueue(bus) {
@@ -245,6 +265,7 @@ export class DdcController {
             this._log(`Error setting DDC values on bus ${bus}: ${e.message}`);
         } finally {
             queue.inFlight = false;
+            queue.lastWriteTime = GLib.get_monotonic_time();
             // If the target changed while the write was in flight, dispatch the latest values
             if (queue.target &&
                 (!queue.lastSent ||

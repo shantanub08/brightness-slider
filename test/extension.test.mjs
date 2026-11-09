@@ -1,6 +1,10 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
+import { IndicatorManager, MonitorBrightnessItem } from '../src/extension.js';
+import { hardwareAndSoftwareToSlider, sliderToHardwareAndSoftware } from '../src/slider.js';
+import { makeSettings as makeMockSettings } from './mocks/settings-factory.mjs';
+
 // ── Bug 3: inhibit_cursor_visibility GNOME 46 compat (issues #51, #53) ──
 //
 // GNOME 46 removed Meta.CursorTracker.inhibit/uninhibit_cursor_visibility.
@@ -219,5 +223,189 @@ describe('MonitorManager.getMonitors() filter logic', () => {
     test('unknown monitors setting returns null', () => {
         const result = getMonitors(MONITOR_NAMES, makeSettings('invalid-value', ''), makeLogger(), LAYOUT_MONITORS);
         assert.equal(result, null);
+    });
+});
+
+// ── MonitorBrightnessItem external hardware sync ──
+
+describe('MonitorBrightnessItem – external hardware sync', () => {
+    function makeItem(hardwareBrightness, storedDim = 1.0) {
+        const settings = makeMockSettings({
+            'min-brightness': 0.1,
+            'current-brightness': storedDim,
+        });
+        const overlay = {
+            hidden: 0,
+            hide() { this.hidden++; },
+            show() {},
+        };
+        const ddc = {
+            async getBrightnessAndContrast() {
+                return { brightness: hardwareBrightness, contrast: hardwareBrightness };
+            },
+        };
+        const item = new MonitorBrightnessItem(
+            makeLogger(), settings, overlay, ddc,
+            { bus: 5, monitorIndex: 0, displayName: 'MSI MAG321UP OLED' });
+        return { item, settings, overlay };
+    }
+
+    test('initial hardware read moves the thumb to the hardware zone and clears dim', async () => {
+        const { item, settings, overlay } = makeItem(40, 0.5);
+        await new Promise(r => setImmediate(r));
+
+        assert.ok(Math.abs(item.slider.value - 0.55) < 1e-6);
+        assert.equal(settings.get_double('current-brightness'), 1.0);
+        assert.equal(overlay.hidden, 1);
+        item.destroy();
+    });
+
+    test('initial hardware read at 0 keeps software dimming in the lower zone', async () => {
+        const { item, settings, overlay } = makeItem(0, 0.5);
+        await new Promise(r => setImmediate(r));
+
+        const expected = hardwareAndSoftwareToSlider(0, 0.5, 0.25, 0.1);
+        assert.ok(Math.abs(item.slider.value - expected) < 1e-6);
+        assert.equal(settings.get_double('current-brightness'), 0.5);
+        assert.equal(overlay.hidden, 0);
+        item.destroy();
+    });
+
+    test('external increase clears dim; external 0 without dim sits on the split', async () => {
+        const { item, settings, overlay } = makeItem(0, 1.0);
+        await new Promise(r => setImmediate(r));
+
+        item.applyExternalBrightness(0);
+        assert.equal(item.slider.value, 0.25);
+
+        item.applyExternalBrightness(50);
+        assert.ok(Math.abs(item.slider.value - 0.625) < 1e-6);
+        assert.equal(settings.get_double('current-brightness'), 1.0);
+        assert.equal(overlay.hidden, 0);
+        item.destroy();
+    });
+});
+
+// ── MonitorBrightnessItem separate shortcut steps ──
+
+describe('MonitorBrightnessItem – separate shortcut steps', () => {
+    function makeItem(overrides = {}) {
+        const settings = makeMockSettings({
+            'min-brightness': 0.1,
+            'current-brightness': 1.0,
+            'ddc-enabled': false,
+            'shortcut-step-software': 0.05,
+            'shortcut-step-hardware': 0.05,
+            ...overrides,
+        });
+        const item = new MonitorBrightnessItem(
+            makeLogger(), settings, null, null,
+            { bus: null, monitorIndex: 0, displayName: 'Test display' });
+        return item;
+    }
+
+    test('hardware zone uses the hardware step', () => {
+        const item = makeItem({
+            'shortcut-step-software': 0.05,
+            'shortcut-step-hardware': 0.20,
+        });
+        item.setSliderValue(hardwareAndSoftwareToSlider(50, 1.0, 0.25, 0.1), false);
+
+        item.stepDelta(+1);
+
+        const res = sliderToHardwareAndSoftware(item.slider.value, 0.25, 0.1);
+        assert.equal(res.hardwareBrightness, 70);
+        item.destroy();
+    });
+
+    test('software zone uses the software step', () => {
+        const item = makeItem({
+            'shortcut-step-software': 0.20,
+            'shortcut-step-hardware': 0.05,
+        });
+        item.setSliderValue(hardwareAndSoftwareToSlider(0, 1.0, 0.25, 0.1), false);
+
+        item.stepDelta(-1);
+
+        const res = sliderToHardwareAndSoftware(item.slider.value, 0.25, 0.1);
+        assert.equal(res.hardwareBrightness, 0);
+        assert.ok(Math.abs(res.softwareDim - 0.82) < 0.001);
+        item.destroy();
+    });
+});
+
+// ── IndicatorManager external refresh polling ──
+
+describe('IndicatorManager – external refresh polling', () => {
+    function makeItem(bus, calls, name) {
+        return {
+            bus,
+            applyExternalBrightness(value) { calls.push([name, value]); },
+            destroy() {},
+        };
+    }
+
+    function makeManager(items, ddc) {
+        const manager = new IndicatorManager(makeLogger(), makeMockSettings(), null, null);
+        manager._sliderItems = items;
+        manager._ddcController = ddc;
+        return manager;
+    }
+
+    test('reads only DDC items and applies brightness, not contrast', async () => {
+        const calls = [];
+        const ddc = {
+            isBusBusy() { return false; },
+            destroy() {},
+            async getBrightnessAndContrast(bus) {
+                assert.equal(bus, 5);
+                return { brightness: 42, contrast: 90 };
+            },
+        };
+        const manager = makeManager([
+            makeItem(5, calls, 'ddc'),
+            makeItem(null, calls, 'overlay'),
+        ], ddc);
+
+        await manager._refreshFromHardware();
+        assert.deepEqual(calls, [['ddc', 42]]);
+        manager.disable();
+    });
+
+    test('skips a bus that is still writing or settling', async () => {
+        const calls = [];
+        const ddc = {
+            isBusBusy() { return true; },
+            destroy() {},
+            async getBrightnessAndContrast() {
+                throw new Error('should not read a busy bus');
+            },
+        };
+        const manager = makeManager([makeItem(5, calls, 'ddc')], ddc);
+
+        await manager._refreshFromHardware();
+        assert.deepEqual(calls, []);
+        manager.disable();
+    });
+
+    test('drops a read that finishes after the slider list was rebuilt', async () => {
+        const calls = [];
+        let resolveRead;
+        const ddc = {
+            isBusBusy() { return false; },
+            destroy() {},
+            getBrightnessAndContrast() {
+                return new Promise(resolve => { resolveRead = resolve; });
+            },
+        };
+        const manager = makeManager([makeItem(5, calls, 'ddc')], ddc);
+
+        const pending = manager._refreshFromHardware();
+        manager._generation++;
+        resolveRead({ brightness: 42, contrast: 42 });
+        await pending;
+
+        assert.deepEqual(calls, []);
+        manager.disable();
     });
 });

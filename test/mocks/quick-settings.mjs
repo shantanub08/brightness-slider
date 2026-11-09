@@ -1,5 +1,13 @@
 export class QuickSlider {
     constructor(props = {}) {
+        this._setup(props);
+    }
+
+    _init(props = {}) {
+        this._setup(props);
+    }
+
+    _setup(props) {
         Object.assign(this, props);
         this.menuEnabled = true;
         this.visible = true;
@@ -23,5 +31,6 @@ export class QuickSlider {
             unblock_signal_handler(id) {},
         };
     }
+
     destroy() {}
 }

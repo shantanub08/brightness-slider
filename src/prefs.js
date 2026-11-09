@@ -19,6 +19,7 @@
 import Adw from 'gi://Adw';
 import GObject from 'gi://GObject';
 import Gio from 'gi://Gio';
+import Gdk from 'gi://Gdk';
 import Gtk from 'gi://Gtk';
 import {
     ExtensionPreferences,
@@ -191,11 +192,20 @@ const PreferencesPage = GObject.registerClass(class PreferencesPage extends Adw.
         {
             const group = new Adw.PreferencesGroup({
                 title: _('Keyboard shortcuts'),
-                description: _('Default shortcuts use Shift + hardware brightness keys. Clear to disable; use gsettings to set a custom binding.'),
+                description: _('Default shortcuts use Shift + hardware brightness keys. Click Set and press a key combination to change one, or Clear to disable it. Bare media keys and function keys are allowed; other keys need a modifier.'),
             });
 
             group.add(this._buildShortcutRow(_('Increase brightness'), 'brightness-up'));
             group.add(this._buildShortcutRow(_('Decrease brightness'), 'brightness-down'));
+
+            group.add(this._buildStepRow(
+                _('Software step size:'),
+                _('Portion of the software dimming zone moved by each shortcut press.'),
+                'shortcut-step-software'));
+            group.add(this._buildStepRow(
+                _('Hardware step size:'),
+                _('Portion of the hardware brightness zone moved by each shortcut press.'),
+                'shortcut-step-hardware'));
 
             this.add(group);
         }
@@ -277,6 +287,15 @@ const PreferencesPage = GObject.registerClass(class PreferencesPage extends Adw.
         refresh();
         this._settings.connect(`changed::${settingKey}`, refresh);
 
+        const setButton = new Gtk.Button({
+            label: _('Set…'),
+            valign: Gtk.Align.CENTER,
+        });
+        setButton.add_css_class('flat');
+        setButton.connect('clicked', () => {
+            this._openShortcutDialog(title, settingKey, row.get_root());
+        });
+
         const clearButton = new Gtk.Button({
             label: _('Clear'),
             valign: Gtk.Align.CENTER,
@@ -292,9 +311,151 @@ const PreferencesPage = GObject.registerClass(class PreferencesPage extends Adw.
         resetButton.connect('clicked', () => this._settings.reset(settingKey));
 
         row.add_suffix(shortcutLabel);
+        row.add_suffix(setButton);
         row.add_suffix(clearButton);
         row.add_suffix(resetButton);
         return row;
+    }
+
+    _buildStepRow(title, subtitle, settingKey) {
+        const row = new Adw.ActionRow({ title, subtitle });
+        const scale = new Gtk.Scale({
+            orientation: Gtk.Orientation.HORIZONTAL,
+            adjustment: new Gtk.Adjustment({
+                lower: 1, upper: 20,
+                step_increment: 1, page_increment: 5,
+                value: this._settings.get_double(settingKey) * 100,
+            }),
+            digits: 0,
+            draw_value: true,
+            value_pos: Gtk.PositionType.RIGHT,
+            hexpand: true,
+            width_request: 200,
+            valign: Gtk.Align.CENTER,
+        });
+        scale.connect('value-changed', () => {
+            this._settings.set_double(settingKey, scale.get_value() / 100);
+        });
+        this._settings.connect(`changed::${settingKey}`, () => {
+            scale.set_value(this._settings.get_double(settingKey) * 100);
+        });
+        const percent = new Gtk.Label({
+            label: '%',
+            valign: Gtk.Align.CENTER,
+        });
+        row.add_suffix(scale);
+        row.add_suffix(percent);
+        return row;
+    }
+
+    _openShortcutDialog(title, settingKey, parent) {
+        const dialog = new Gtk.Window({
+            title: _('Set Shortcut'),
+            transient_for: parent instanceof Gtk.Window ? parent : null,
+            modal: true,
+            resizable: false,
+            default_width: 420,
+        });
+        dialog.set_titlebar(new Gtk.HeaderBar());
+
+        const box = new Gtk.Box({
+            orientation: Gtk.Orientation.VERTICAL,
+            spacing: 12,
+            margin_top: 24,
+            margin_bottom: 24,
+            margin_start: 24,
+            margin_end: 24,
+        });
+
+        const heading = new Gtk.Label({
+            label: title,
+            xalign: 0,
+        });
+        heading.add_css_class('title-3');
+        box.append(heading);
+
+        const prompt = new Gtk.Label({
+            label: _('Press the key combination you want to use.'),
+            xalign: 0,
+            wrap: true,
+        });
+        box.append(prompt);
+
+        const error = new Gtk.Label({
+            xalign: 0,
+            wrap: true,
+            visible: false,
+        });
+        error.add_css_class('error');
+        box.append(error);
+
+        const hint = new Gtk.Label({
+            label: _('If nothing happens, a system shortcut may already be using this key.'),
+            xalign: 0,
+            wrap: true,
+        });
+        hint.add_css_class('dim-label');
+        box.append(hint);
+
+        const cancelButton = new Gtk.Button({
+            label: _('Cancel'),
+            halign: Gtk.Align.END,
+        });
+        cancelButton.connect('clicked', () => dialog.close());
+        box.append(cancelButton);
+
+        dialog.set_child(box);
+
+        const controller = new Gtk.EventControllerKey();
+        controller.connect('key-pressed', (_controller, keyval, _keycode, state) => {
+            if (keyval === Gdk.KEY_Escape) {
+                dialog.close();
+                return true;
+            }
+            if (this._isModifierKey(keyval))
+                return true;
+
+            const mask = state & Gtk.accelerator_get_default_mod_mask();
+            if (!this._isBareShortcutKey(keyval) && mask === 0) {
+                error.label = _('Hold Ctrl, Alt, Shift or Super, or use a media or function key.');
+                error.visible = true;
+                return true;
+            }
+            if (!Gtk.accelerator_valid(keyval, mask)) {
+                error.label = _('That key combination cannot be used as a shortcut.');
+                error.visible = true;
+                return true;
+            }
+
+            this._settings.set_strv(settingKey,
+                [Gtk.accelerator_name(keyval, mask)]);
+            dialog.close();
+            return true;
+        });
+        dialog.add_controller(controller);
+        dialog.present();
+        cancelButton.grab_focus();
+    }
+
+    _isModifierKey(keyval) {
+        return [
+            Gdk.KEY_Shift_L, Gdk.KEY_Shift_R,
+            Gdk.KEY_Control_L, Gdk.KEY_Control_R,
+            Gdk.KEY_Alt_L, Gdk.KEY_Alt_R,
+            Gdk.KEY_Super_L, Gdk.KEY_Super_R,
+            Gdk.KEY_Meta_L, Gdk.KEY_Meta_R,
+            Gdk.KEY_Hyper_L, Gdk.KEY_Hyper_R,
+            Gdk.KEY_Caps_Lock, Gdk.KEY_Num_Lock,
+        ].includes(keyval);
+    }
+
+    _isBareShortcutKey(keyval) {
+        // Media/XF86 keys, function keys, and other GDK special keys are
+        // safe to bind without a modifier.  accelerator_valid() still
+        // rejects the ones GTK cannot express.
+        return (keyval >= 0x1008FF00 && keyval <= 0x1008FFFF) ||
+            (keyval >= Gdk.KEY_F1 && keyval <= Gdk.KEY_F35) ||
+            (keyval >= 0xFF00 && keyval <= 0xFFFF);
     }
 
     _bindBuiltinMonitorControl() {

@@ -48,6 +48,8 @@ const EXPECTED_KEYS = {
     'debug': 'b',
     'brightness-up': 'as',
     'brightness-down': 'as',
+    'shortcut-step-software': 'd',
+    'shortcut-step-hardware': 'd',
     'ddc-enabled': 'b',
     'software-dim-ratio': 'd',
     'sync-monitors': 'b',
