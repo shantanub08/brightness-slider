@@ -7,7 +7,6 @@ import assert from 'node:assert/strict';
 import Clutter from './mocks/clutter.mjs';
 import {
     CursorTrackerPointerWatcher,
-    defineShaderEffectGammaCurve,
     getDefaultSeat,
 } from '../src/extension.js';
 
@@ -175,77 +174,5 @@ describe('getDefaultSeat()', () => {
         };
 
         assert.equal(getDefaultSeat(), seat);
-    });
-});
-
-// ── GammaCurveEffect on Clutter.ShaderEffect ─────────────────────────────────
-
-describe('GammaCurveEffect on Clutter.ShaderEffect (GS 51+)', () => {
-    const ShaderGammaCurveEffect = defineShaderEffectGammaCurve();
-
-    // Paint into the framebuffer of the stage area `area`: like Clutter, a
-    // viewport spanning the whole stage, offset by the area's position.
-    function paintContextFor(area) {
-        const framebuffer = {
-            get_viewport_x: () => -area.x,
-            get_viewport_y: () => -area.y,
-            get_viewport_width: () => global.stage.width,
-            get_width: () => area.width,
-            get_height: () => area.height,
-        };
-        return { get_framebuffer: () => framebuffer };
-    }
-    function effectOn(brightness, monitorRects) {
-        const actor = new Clutter.Actor();
-        const e = new ShaderGammaCurveEffect(brightness, monitorRects);
-        actor.add_effect_with_name('brightness-slider-shader', e);
-        return e;
-    }
-
-    const left = { x: 0, y: 0, width: 1920, height: 1080 };
-    const right = { x: 1920, y: 0, width: 1680, height: 1050 };
-    beforeEach(() => {
-        global.stage = { width: 3600, height: 1080 };
-    });
-
-    test('extends Clutter.ShaderEffect', () => {
-        assert.ok(new ShaderGammaCurveEffect(0.5, []) instanceof Clutter.ShaderEffect);
-    });
-
-    test('static snippet is a fragment snippet scaling by u_brightness', () => {
-        const snippet = new ShaderGammaCurveEffect(0.5, []).vfunc_get_static_snippet();
-
-        assert.equal(snippet.hook, 'fragment');
-        assert.match(snippet.declarations, /uniform float u_brightness;/);
-        assert.match(snippet.post, /u_brightness/);
-    });
-
-    test('sets u_brightness by name at paint time', () => {
-        const e = effectOn(0.5, []);
-        e.vfunc_paint_target(null, paintContextFor(left));
-        assert.deepEqual(e._uniforms.u_brightness, { size: 1, values: [0.5] });
-    });
-
-    test('leaves views of unselected monitors at full brightness', () => {
-        const e = effectOn(0.5, [right]);
-        e.vfunc_paint_target(null, paintContextFor(right));
-        assert.deepEqual(e._uniforms.u_brightness.values, [0.5]);
-        e.vfunc_paint_target(null, paintContextFor(left));
-        assert.deepEqual(e._uniforms.u_brightness.values, [1.0]);
-    });
-
-    test('skips the effect for actors that paint nothing', () => {
-        const e = effectOn(0.5, []);
-        assert.equal(e.vfunc_pre_paint(null, null), true);
-        e.get_actor()._paintVolumeSize = [1024, 0];
-        assert.equal(e.vfunc_pre_paint(null, null), false);
-    });
-
-    test('update() stores new parameters and queues a repaint', () => {
-        const e = effectOn(0.5, []);
-        e.update(0.3, []);
-        assert.equal(e._repaints, 1);
-        e.vfunc_paint_target(null, paintContextFor(left));
-        assert.deepEqual(e._uniforms.u_brightness.values, [0.3]);
     });
 });

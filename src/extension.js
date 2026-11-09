@@ -20,7 +20,6 @@ import * as Config from 'resource:///org/gnome/shell/misc/config.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import {QuickSlider} from 'resource:///org/gnome/shell/ui/quickSettings.js';
 import Clutter from 'gi://Clutter';
-import Cogl from 'gi://Cogl';
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import GObject from 'gi://GObject';
@@ -46,170 +45,6 @@ import {
 const PointerWatcher = parseInt(Config.PACKAGE_VERSION) < 51
     ? await import('resource:///org/gnome/shell/ui/pointerWatcher.js')
     : null;
-
-// Backlight-like GLSL dimming effect: out = b * c, where b = brightness.
-// Contrast ratios are preserved, like a hardware backlight; blacks stay
-// black and everything scales down linearly.
-//
-// The effect is attached to many actors of different sizes (uiGroup's
-// children, each window, the background), so monitor targeting cannot use
-// actor-relative coordinates.  Instead it is decided at paint time from the
-// stage area being painted: each monitor is painted separately (its stage
-// view, or e.g. a screencast of it), and is either dimmed or left alone as
-// a whole.
-//
-// monitorRects: [{x,y,width,height}] in stage coordinates.
-//   Empty (length 0) → dim everywhere.
-//   Non-empty → only dim areas whose centre lies inside one of the rects.
-// area: the painted stage area, or null if unknown (then dimmed).
-export function brightnessForArea(brightness, monitorRects, area) {
-    if (monitorRects.length === 0 || !area)
-        return brightness;
-    const cx = area.x + area.width / 2;
-    const cy = area.y + area.height / 2;
-    const dimmed = monitorRects.some(r =>
-        cx >= r.x && cx < r.x + r.width && cy >= r.y && cy < r.y + r.height);
-    return dimmed ? brightness : 1.0;
-}
-
-// Stage area covered by the framebuffer `paintContext` paints into.  Clutter
-// gives stage views and clutter_stage_paint_to_framebuffer() targets alike a
-// viewport spanning the whole stage, offset by the painted area's position,
-// so the area follows from the viewport and the framebuffer size.
-// (ClutterPaintContext.get_stage_view() is not introspectable.)
-export function paintedStageArea(paintContext) {
-    const framebuffer = paintContext.get_framebuffer();
-    const scale = framebuffer.get_viewport_width() / global.stage.width;
-    if (!(scale > 0))
-        return null;
-    return {
-        x: -framebuffer.get_viewport_x() / scale,
-        y: -framebuffer.get_viewport_y() / scale,
-        width: framebuffer.get_width() / scale,
-        height: framebuffer.get_height() / scale,
-    };
-}
-
-// Brightness for the shader when `actor` is painted into `paintContext`.
-//
-// An actor painted through a Clutter.Clone (overview window previews,
-// Alt+Tab and workspace thumbnails, the magnifier...) is drawn in the
-// clone's place, which is inside a shader target like every visible actor
-// (see OverlayManager._isContainer()) and is dimmed there: dimming the
-// clone paint here as well would square the brightness.
-function paintBrightness(actor, brightness, monitorRects, paintContext) {
-    if (actor.is_in_clone_paint())
-        return 1.0;
-    if (monitorRects.length === 0)
-        return brightness;
-    return brightnessForArea(brightness, monitorRects, paintedStageArea(paintContext));
-}
-
-// Some shader targets paint nothing for long stretches (empty containers
-// such as modalDialogGroup, or the keyboard box, 0 px high while hidden).
-// An offscreen effect would then allocate a zero-sized framebuffer
-// ("cogl_framebuffer_set_viewport: assertion 'width > 0 && height > 0'");
-// paint such actors without the effect instead.  The size is taken from
-// the same box ClutterOffscreenEffect sizes its framebuffer from: the local
-// paint volume, or the allocation when the paint volume is unknown.
-export function hasPaintArea(actor) {
-    const volume = actor.get_paint_volume();
-    const [width, height] = volume
-        ? [volume.get_width(), volume.get_height()]
-        : actor.get_allocation_box().get_size();
-    return width > 0 && height > 0;
-}
-
-const GAMMA_CURVE_DECLARATIONS = `
-    uniform float u_brightness;
-`;
-
-const GAMMA_CURVE_SOURCE = `
-    cogl_color_out.rgb = clamp(u_brightness, 0.0, 1.0) *
-        clamp(cogl_color_out.rgb, 0.0, 1.0);
-`;
-
-// The effect classes are only defined on the GNOME Shell versions that
-// have their base class (registering the other one would fail).
-function defineGLSLEffectGammaCurve() {
-    return GObject.registerClass(
-        class GammaCurveEffect extends Shell.GLSLEffect {
-            _init(brightness, monitorRects) {
-                super._init();
-                this._brightnessLoc = this.get_uniform_location('u_brightness');
-                this._brightness = brightness;
-                this._monitorRects = monitorRects || [];
-            }
-
-            vfunc_build_pipeline() {
-                this.add_glsl_snippet(Cogl.SnippetHook.FRAGMENT,
-                    GAMMA_CURVE_DECLARATIONS, GAMMA_CURVE_SOURCE, false);
-            }
-
-            vfunc_pre_paint(node, paintContext) {
-                if (!hasPaintArea(this.get_actor()))
-                    return false;
-                return super.vfunc_pre_paint(node, paintContext);
-            }
-
-            vfunc_paint_target(node, paintContext) {
-                this.set_uniform_float(this._brightnessLoc, 1,
-                    [paintBrightness(this.get_actor(), this._brightness,
-                        this._monitorRects, paintContext)]);
-                super.vfunc_paint_target(node, paintContext);
-            }
-
-            update(brightness, monitorRects) {
-                this._brightness = brightness;
-                this._monitorRects = monitorRects;
-                this.queue_repaint();
-            }
-        }
-    );
-}
-
-// In GS 51, Shell.GLSLEffect was removed.  Its replacement,
-// Clutter.ShaderEffect, takes the GLSL as a Cogl snippet and sets uniforms
-// by name.  Exported for tests.
-export function defineShaderEffectGammaCurve() {
-    return GObject.registerClass(
-        class GammaCurveEffect extends Clutter.ShaderEffect {
-            _init(brightness, monitorRects) {
-                super._init();
-                this._brightness = brightness;
-                this._monitorRects = monitorRects || [];
-            }
-
-            vfunc_get_static_snippet() {
-                return Cogl.Snippet.new(Cogl.SnippetHook.FRAGMENT,
-                    GAMMA_CURVE_DECLARATIONS, GAMMA_CURVE_SOURCE);
-            }
-
-            vfunc_pre_paint(node, paintContext) {
-                if (!hasPaintArea(this.get_actor()))
-                    return false;
-                return super.vfunc_pre_paint(node, paintContext);
-            }
-
-            vfunc_paint_target(node, paintContext) {
-                this.set_uniform_float('u_brightness', 1,
-                    [paintBrightness(this.get_actor(), this._brightness,
-                        this._monitorRects, paintContext)]);
-                super.vfunc_paint_target(node, paintContext);
-            }
-
-            update(brightness, monitorRects) {
-                this._brightness = brightness;
-                this._monitorRects = monitorRects;
-                this.queue_repaint();
-            }
-        }
-    );
-}
-
-export const GammaCurveEffect = Shell.GLSLEffect !== undefined
-    ? defineGLSLEffectGammaCurve()
-    : defineShaderEffectGammaCurve();
 
 // Stand-in for ui/pointerWatcher.js on GS 51+: follows the pointer through
 // the cursor tracker's position-invalidated signal, like ui/magnifier.js.
@@ -436,7 +271,7 @@ export default class BrightnessSliderExtension extends Extension {
         } else {
             this._overlayManager.show(curBrightness);
             this._cursorManager.setActive(this._overlayManager.initialized());
-            // The clone is not a shader target; it dims its own sprite.
+            // The clone sits above the dimming overlay; it dims its own sprite.
             this._cursorManager.refreshDim();
         }
     }
@@ -1414,15 +1249,14 @@ class CursorManager {
     _updateMousePosition() {
         const [x, y] = global.get_pointer();
         // Damage the current (old) paint volume before moving.  set_position
-        // should damage both positions, but on GNOME 51 the cursor clone sits
-        // above offscreen-redirected siblings and a missed old-position
-        // damage leaves a cursor trail; queue it explicitly (the clone is a
-        // small actor, so this is cheap).
+        // should damage both positions, but a missed old-position damage
+        // leaves a cursor trail; queue it explicitly (the clone is a small
+        // actor, so this is cheap).
         this._cursorActor.queue_redraw();
         this._cursorActor.set_position(x, y);
         this._cursorSprite.content.dimFactor = this._overlayManager.brightnessAt(x, y);
-        // Keep the clone above menus/dialogs that raised themselves (cheap
-        // no-op when nothing changed).
+        // Keep the overlay group above stage-level actors that raised
+        // themselves (cheap no-op when nothing changed).
         this._overlayManager.raiseToTop();
     }
 
@@ -1530,7 +1364,19 @@ class CursorManager {
     }
 }
 
-// Gamma-curve shader lifecycle and cursor actor hosting.
+// Software dimming via translucent black overlays.
+//
+// Do not replace this with a Clutter.ShaderEffect (a Clutter.OffscreenEffect
+// subclass) on the window actors: Mutter's damage tracking is known to break
+// for moving actors with offscreen effects, leaving trails of the window at
+// its previous positions while it is dragged.  A plain translucent actor has
+// no offscreen redirection and dims the final composition exactly like the
+// old linear shader (out = brightness * color).
+//
+// The overlay group is a stage child above uiGroup, so it also dims the shell
+// chrome (panel, menus, overview, lock screen).  The software cursor clone is
+// hosted in the same group, above the overlays, and dims its own sprite (see
+// brightnessAt()).
 export class OverlayManager {
     constructor(logger, settings, monitorManager) {
         this._logger = logger;
@@ -1538,15 +1384,13 @@ export class OverlayManager {
         this._monitorManager = monitorManager;
 
         this._actorGroup = null;
-        // [{container, addedId, removedId}] — see _isContainer()
-        this._containers = [];
-        // [{actor, effect, destroyId}] — actors currently carrying our shader
-        this._shaderTargets = [];
+        // [{actor}] — black rectangles over the dimmed monitors
+        this._overlayActors = [];
         // null = not dimming; number = current brightness level
         this._currentBrightness = null;
         // Cache of the last-applied show() parameters, for redundancy skips
         this._lastShowSig = null;
-        this._lastMonitorSig = null;
+        this._stageChildAddedId = null;
         this._unredirectInhibited = false;
     }
 
@@ -1554,34 +1398,40 @@ export class OverlayManager {
         this._actorGroup = new St.Widget({ name: 'brightness-slider-overlays' });
         this.resetSize();
         Shell.util_set_hidden_from_pick(this._actorGroup, true);
-        // Host the cursor-clone group inside uiGroup, like the magnifier
-        // does, above the shader-dimmed siblings.  It carries no shader
-        // itself (see _isShaderTarget); the clone dims its own sprite.
-        Main.uiGroup.add_child(this._actorGroup);
+        global.stage.add_child(this._actorGroup);
 
-        this._watchContainer(global.stage);
+        // Keep the group above stage children added later (screen shield,
+        // window drag helpers, ...).  Shell chrome lives inside uiGroup, so
+        // it can never rise above a stage-level group.
+        // In GS 45, use of "actor" was renamed to "child".
+        const clutterContainer = Clutter.Container !== undefined;
+        this._stageChildAddedId = global.stage.connect(
+            clutterContainer ? 'actor-added' : 'child-added',
+            () => this.raiseToTop());
+        this.raiseToTop();
     }
 
     disable() {
-        for (const { container, addedId, removedId } of this._containers) {
-            container.disconnect(addedId);
-            container.disconnect(removedId);
+        if (this._stageChildAddedId !== null) {
+            try { global.stage.disconnect(this._stageChildAddedId); } catch (_e) {}
+            this._stageChildAddedId = null;
         }
-        this._containers = [];
 
         this.hide();
 
-        Main.uiGroup.remove_child(this._actorGroup);
+        global.stage.remove_child(this._actorGroup);
         this._actorGroup.destroy();
         this._actorGroup = null;
+        this._overlayActors = [];
     }
 
     resetSize() {
         this._actorGroup.set_size(global.screen_width, global.screen_height);
+        // Per-monitor overlays are repositioned on the next show() call.
     }
 
     initialized() {
-        return this._shaderTargets.length > 0;
+        return this._currentBrightness !== null;
     }
 
     addActor(actor) {
@@ -1589,129 +1439,27 @@ export class OverlayManager {
         this.raiseToTop();
     }
 
-    // Menus and dialogs raise themselves above their uiGroup siblings when
-    // opening, which puts them above the cursor clone; no signal fires on
-    // reorder, so callers re-assert topmost position (no-op when already top).
-    raiseToTop() {
-        if (this._actorGroup !== null &&
-            this._actorGroup.get_parent() === Main.uiGroup &&
-            Main.uiGroup.get_last_child() !== this._actorGroup) {
-            Main.uiGroup.set_child_above_sibling(this._actorGroup, null);
-        }
-    }
-
     removeActor(actor) {
         if (this._actorGroup)
             this._actorGroup.remove_child(actor);
     }
 
-    // Which actors carry the shader.
-    //
-    // The shader cannot go on the stage (the root framebuffer), nor on a
-    // MetaWindowGroup (window_group, top_window_group, the feedback group):
-    // those paint through mutter's culling, which goes wrong inside an
-    // offscreen framebuffer.  Nor on uiGroup, which contains them: there it
-    // dropped the desktop background from the dimmed image whenever the
-    // screen changed (flickering, worst on monitors with different refresh
-    // rates).  So these containers are walked through, and the shader goes
-    // on every other actor directly inside them: the shell's UI groups, the
-    // window actors, the background group...  Every visible actor is then
-    // inside exactly one shader target, and is dimmed once.  (Clones are
-    // dimmed by the target they sit in, see paintBrightness().)
-    //
-    // The cursor-clone group is excluded: an offscreen effect on an actor
-    // that moves every frame leaves stale trails, so the clone dims itself
-    // instead (see brightnessAt()).
-    _isContainer(actor) {
-        return actor === global.stage || actor === Main.uiGroup ||
-            actor instanceof Meta.WindowGroup;
-    }
-
-    _isShaderTarget(actor) {
-        return actor !== this._actorGroup && !this._isContainer(actor);
-    }
-
-    _collectShaderTargets(container = global.stage) {
-        return container.get_children().flatMap(child =>
-            this._isContainer(child)
-                ? this._collectShaderTargets(child)
-                : this._isShaderTarget(child) ? [child] : []);
-    }
-
-    // Follow the children (windows, popups...) of `container` and of the
-    // containers inside it as they come and go.
-    _watchContainer(container) {
-        // In GS 45, use of "actor" was renamed to "child".
-        const clutterContainer = Clutter.Container !== undefined;
-        const addedId = container.connect(
-            clutterContainer ? 'actor-added' : 'child-added',
-            (_container, child) => this._onChildAdded(child));
-        const removedId = container.connect(
-            clutterContainer ? 'actor-removed' : 'child-removed',
-            (_container, child) => this._removeActorFromTargets(child));
-        this._containers.push({ container, addedId, removedId });
-
-        for (const child of container.get_children()) {
-            if (this._isContainer(child))
-                this._watchContainer(child);
+    // The group is a stage child, so it stays above uiGroup and all shell
+    // chrome.  Re-assert topmost position when another stage child is added
+    // or raises itself (no-op when already top).
+    raiseToTop() {
+        if (this._actorGroup !== null &&
+            this._actorGroup.get_parent() === global.stage &&
+            global.stage.get_last_child() !== this._actorGroup) {
+            global.stage.set_child_above_sibling(this._actorGroup, null);
         }
-    }
-
-    _onChildAdded(child) {
-        if (this._currentBrightness !== null && this._isShaderTarget(child)) {
-            this._applyShaderToActor(child);
-            // A new offscreen-redirected actor can leave the area it
-            // covers stale until something forces a full repaint.
-            this._forceFullRedraw();
-        }
-        // The pointer watch re-raises the clone group on motion, but a popup
-        // opened via keyboard with the pointer stationary would cover the
-        // clone until the mouse next moves — also re-raise when something
-        // is added.
-        this.raiseToTop();
-    }
-
-    _removeActorFromTargets(actor) {
-        const idx = this._shaderTargets.findIndex(t => t.actor === actor);
-        if (idx !== -1) {
-            const [removed] = this._shaderTargets.splice(idx, 1);
-            if (removed.destroyId) {
-                try { actor.disconnect(removed.destroyId); } catch (_e) {}
-            }
-            this._detachEffect(removed.actor, removed.effect);
-            // Removing an offscreen-redirected actor can leave its last
-            // frame on screen; repaint once to clear it.
-            this._forceFullRedraw();
-        }
-    }
-
-    // Clutter detaches effects itself while destroying an actor; removing
-    // an already-detached effect only logs a "not attached" warning.
-    _detachEffect(actor, effect) {
-        try {
-            if (effect.get_actor() === actor)
-                actor.remove_effect(effect);
-        } catch (_e) {}
-    }
-
-    _applyShaderToActor(actor) {
-        if (this._shaderTargets.some(t => t.actor === actor))
-            return;
-        const monitorRects = this._getDimmedMonitorRects();
-        if (monitorRects === null)
-            return;
-        const effect = new GammaCurveEffect(this._currentBrightness, monitorRects);
-        actor.add_effect_with_name('brightness-slider-shader', effect);
-        const destroyId = actor.connect('destroy', () => this._removeActorFromTargets(actor));
-        this._shaderTargets.push({ actor, effect, destroyId });
-        this._logger.log_debug('_applyShaderToActor: ' + (actor.name || String(actor)));
     }
 
     show(brightness) {
         this._currentBrightness = brightness;
 
-        const monitorRects = this._getDimmedMonitorRects();
-        if (monitorRects === null) {
+        const rects = this._getOverlayRects();
+        if (rects === null) {
             // Monitor selection matches nothing: dim nothing.
             this.hide();
             return;
@@ -1719,82 +1467,98 @@ export class OverlayManager {
 
         this._inhibitUnredirect(true);
 
-        const targets = this._collectShaderTargets();
-        const targetsChanged =
-            this._shaderTargets.length !== targets.length ||
-            this._shaderTargets.some((t, i) => t.actor !== targets[i]);
-        const monitorSig = JSON.stringify(monitorRects);
-        const monitorsChanged = monitorSig !== this._lastMonitorSig;
-        this._lastMonitorSig = monitorSig;
-
         // Settings-change storms (e.g. prefs rewriting a key) re-invoke show()
         // with identical parameters many times per second; skip when nothing
         // would change.
-        const sig = brightness + '/' + JSON.stringify(monitorRects);
-        if (sig === this._lastShowSig &&
-            this._shaderTargets.length === targets.length &&
-            this._shaderTargets.every((t, i) => t.actor === targets[i] && t.effect.enabled)) {
+        const sig = brightness + '/' + JSON.stringify(rects);
+        if (sig === this._lastShowSig)
             return;
-        }
         this._lastShowSig = sig;
         this._logger.log_debug('show(' + brightness + ')');
 
-        const existingMap = new Map(this._shaderTargets.map(t => [t.actor, t.effect]));
-        const existingDestroyMap = new Map(this._shaderTargets.map(t => [t.actor, t.destroyId]));
+        const styleStr = 'background-color: rgba(0,0,0,' +
+            (1.0 - brightness).toFixed(4) + ');';
 
-        // Remove effects from actors no longer in target list
-        for (const { actor, effect, destroyId } of this._shaderTargets) {
-            if (!targets.includes(actor)) {
-                if (destroyId) {
-                    try { actor.disconnect(destroyId); } catch (_e) {}
-                }
-                this._detachEffect(actor, effect);
-            }
+        // Grow the pool if we need more overlay actors.  Insert at index 0
+        // so the overlays stay below the cursor clone (which is added later).
+        while (this._overlayActors.length < rects.length) {
+            const overlay = new St.Widget({
+                name: 'brightness-slider-overlay',
+                reactive: false,
+            });
+            this._actorGroup.insert_child_at_index(overlay, 0);
+            this._overlayActors.push(overlay);
         }
 
-        // Apply or update shader on each current target
-        this._shaderTargets = targets.map(actor => {
-            if (existingMap.has(actor)) {
-                const effect = existingMap.get(actor);
-                effect.update(brightness, monitorRects);
-                effect.enabled = true;
-                return { actor, effect, destroyId: existingDestroyMap.get(actor) };
-            }
-            const effect = new GammaCurveEffect(brightness, monitorRects);
-            actor.add_effect_with_name('brightness-slider-shader', effect);
-            const destroyId = actor.connect('destroy', () => this._removeActorFromTargets(actor));
-            return { actor, effect, destroyId };
-        });
+        // Update and show the active overlays
+        for (let i = 0; i < rects.length; i++) {
+            const r = rects[i];
+            this._overlayActors[i].set_position(r.x, r.y);
+            this._overlayActors[i].set_size(r.width, r.height);
+            this._overlayActors[i].set_style(styleStr);
+            this._overlayActors[i].show();
+        }
 
-        // Applying/removing a batch of offscreen effects, or moving the
-        // dimmed area to different monitors, changes what is painted and can
-        // leave stale regions behind (seen at login on GNOME 51).  One full
-        // repaint after such a change makes the frame consistent;
-        // brightness-only updates skip it.
-        if (targetsChanged || monitorsChanged)
-            this._forceFullRedraw();
-    }
-
-    _forceFullRedraw() {
-        if (global.stage)
-            global.stage.queue_redraw();
+        // Hide any extras from a previous multi-monitor layout
+        for (let i = rects.length; i < this._overlayActors.length; i++)
+            this._overlayActors[i].hide();
     }
 
     hide() {
         this._currentBrightness = null;
         this._lastShowSig = null;
-        for (const { actor, effect, destroyId } of this._shaderTargets) {
-            if (destroyId) {
-                try { actor.disconnect(destroyId); } catch (_e) {}
-            }
-            this._detachEffect(actor, effect);
-        }
-        this._shaderTargets = [];
+        for (const overlay of this._overlayActors)
+            overlay.hide();
         this._inhibitUnredirect(false);
     }
 
+    hideForScreenshot() {
+        for (const overlay of this._overlayActors)
+            overlay.hide();
+        // The next show() with the same brightness must restore the overlays.
+        this._lastShowSig = null;
+    }
+
+    // Brightness the cursor clone should be drawn at when the pointer is at
+    // (x, y): the clone sits above the overlays, so it dims its own sprite.
+    brightnessAt(x, y) {
+        if (this._currentBrightness === null)
+            return 1.0;
+        const rects = this._getOverlayRects();
+        if (rects === null)
+            return 1.0;
+        const dimmed = rects.some(r =>
+            x >= r.x && x < r.x + r.width && y >= r.y && y < r.y + r.height);
+        return dimmed ? this._currentBrightness : 1.0;
+    }
+
+    // Returns the stage-coordinate rects [{x,y,width,height}] to cover with
+    // overlays, or null when the monitor selection matches nothing.
+    _getOverlayRects() {
+        const enabledMonitors = this._settings.get_string('monitors');
+        if (enabledMonitors === 'all') {
+            return [{
+                x: 0,
+                y: 0,
+                width: global.screen_width,
+                height: global.screen_height,
+            }];
+        }
+
+        const monitors = this._monitorManager.getMonitors();
+        if (!monitors || monitors.length === 0)
+            return null;
+
+        return monitors.map(m => ({
+            x: m.x,
+            y: m.y,
+            width: m.width,
+            height: m.height,
+        }));
+    }
+
     // A fullscreen window can skip compositing (unredirection on X11, direct
-    // scanout on Wayland), and the shader with it.  Keep compositing while
+    // scanout on Wayland), and the overlay with it.  Keep compositing while
     // dimming, as ui/magnifier.js does while magnifying.
     _inhibitUnredirect(inhibit) {
         if (inhibit === this._unredirectInhibited)
@@ -1817,46 +1581,12 @@ export class OverlayManager {
         this._forceFullRedraw();
     }
 
-    hideForScreenshot() {
-        for (const { effect } of this._shaderTargets)
-            effect.enabled = false;
-    }
-
-    // Brightness the cursor clone should be drawn at when the pointer is at
-    // (x, y): it is not a shader target, so it is dimmed by its sprite color.
-    brightnessAt(x, y) {
-        if (this._currentBrightness === null)
-            return 1.0;
-        const monitorRects = this._getDimmedMonitorRects();
-        if (monitorRects === null)
-            return 1.0;
-        if (monitorRects.length === 0)
-            return this._currentBrightness;
-        const dimmed = monitorRects.some(r =>
-            x >= r.x && x < r.x + r.width && y >= r.y && y < r.y + r.height);
-        return dimmed ? this._currentBrightness : 1.0;
-    }
-
-    // Returns the stage-coordinate rects [{x,y,width,height}] of the
-    // monitors to dim.  Empty array = dim every monitor (monitors='all').
-    _getDimmedMonitorRects() {
-        const enabledMonitors = this._settings.get_string('monitors');
-        if (enabledMonitors === 'all') return [];
-
-        // The selection matches no monitor (e.g. monitors='external' while
-        // undocked, or the monitor list is not known yet): return null =
-        // dim nothing.  [] is reserved for 'all' = dim everything.
-        const monitors = this._monitorManager.getMonitors();
-        if (!monitors || monitors.length === 0) return null;
-
-        return monitors.map(m => ({
-            x: m.x,
-            y: m.y,
-            width: m.width,
-            height: m.height,
-        }));
+    _forceFullRedraw() {
+        if (global.stage)
+            global.stage.queue_redraw();
     }
 }
+
 
 // Monitor change handling
 export class MonitorManager {

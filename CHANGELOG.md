@@ -2,6 +2,10 @@
 
 ### Unreleased
 
+- Fix trailing window ghosts while dragging: software dimming now
+  uses translucent black overlays instead of per-actor shader
+  effects, whose offscreen buffers broke Mutter's damage tracking.
+  The desktop wallpaper also stays visible during screen recording.
 - Keep the DDC/CI slider thumb in sync when monitor brightness is
   changed outside the extension (monitor OSD buttons or another
   `ddcutil` call): read on Quick Settings open, every 5 seconds while
